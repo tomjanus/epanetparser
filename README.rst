@@ -104,6 +104,7 @@ Usage
 The ``epanetparser`` usage can be displayed with:
 
 .. code-block:: console
+
     ❯ epanetparser -h
     usage: epanetparser [-f <filename> | -l] [OPTIONS]
 
@@ -144,6 +145,7 @@ Invalid network with ``strict`` **milops10** ruleset (failed run)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
+
     ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp --use-ruleset test10
 
     ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -192,6 +194,7 @@ Invalid network without ``strict`` ruleset (failed run)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
+
     ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp
 
     ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -225,6 +228,7 @@ Valid network without any rule violations (success)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
+
     ❯ epanetparser -f ../../../models/epanetparser_test_models/valid_network.inp --use-ruleset milops10
 
     ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
