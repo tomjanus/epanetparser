@@ -104,37 +104,37 @@ Usage
 The ``epanetparser`` usage can be displayed with:
 
 .. code-block:: console
-  ❯ epanetparser -h
-  usage: epanetparser [-f <filename> | -l] [OPTIONS]
+    ❯ epanetparser -h
+    usage: epanetparser [-f <filename> | -l] [OPTIONS]
 
-  Validator of EPANET models in WNTR JSON format prior to conversion to a mixed integer linear programme.
+    Validator of EPANET models in WNTR JSON format prior to conversion to a mixed integer linear programme.
 
-  options:
-  -h, --help            show this help message and exit
-  -f <filename>, --filename <filename>
-                          File containing a EPANET model in WNTR JSON format
-  -l, --list-rulesets   Display a list of all available rulesets
+    options:
+    -h, --help            show this help message and exit
+    -f <filename>, --filename <filename>
+                            File containing a EPANET model in WNTR JSON format
+    -l, --list-rulesets   Display a list of all available rulesets
 
-  validation options:
-  --use-ruleset <ruleset>
-                          Apply the specified ruleset during parsing
-  --raise-on-warning    Raise failures of parsing warnings as exceptions. Implies `--raise-on-error`
-  --raise-on-error      Raise failures of parsing rules as exceptions
-  --ignore-warnings     Do not display parsing report if only warnings are present
+    validation options:
+    --use-ruleset <ruleset>
+                            Apply the specified ruleset during parsing
+    --raise-on-warning    Raise failures of parsing warnings as exceptions. Implies `--raise-on-error`
+    --raise-on-error      Raise failures of parsing rules as exceptions
+    --ignore-warnings     Do not display parsing report if only warnings are present
 
-  display options:
-  --json-output         Display parsing report in json format for machine reading
-  --pretty-output       Display parsing report on the console with colour. This is the default output format
-  --no-emoji            Omit emoji in console parsing reports
-  --no-colour           Omit colour output in console parsing reports. Implies `--no-emoji`
-  --terse-report        Display only a terse report for valid networks
+    display options:
+    --json-output         Display parsing report in json format for machine reading
+    --pretty-output       Display parsing report on the console with colour. This is the default output format
+    --no-emoji            Omit emoji in console parsing reports
+    --no-colour           Omit colour output in console parsing reports. Implies `--no-emoji`
+    --terse-report        Display only a terse report for valid networks
 
-  general options:
-  --no-digest           Omit sha256 digest in JSON and dict parsing reports
-  --version             Display the version of epanetparser
+    general options:
+    --no-digest           Omit sha256 digest in JSON and dict parsing reports
+    --version             Display the version of epanetparser
 
-  The tool is an adaptation of the toolkit for parsing and validating Pywr models written by Paul Slavin, https://github.com/pmslavin/pywrparser,
-  https://pmslavin.github.io/pywrparser
+    The tool is an adaptation of the toolkit for parsing and validating Pywr models written by Paul Slavin, https://github.com/pmslavin/pywrparser,
+    https://pmslavin.github.io/pywrparser
 
 
 Usage Examples
@@ -144,112 +144,112 @@ Invalid network with ``strict`` **milops10** ruleset (failed run)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
-  ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp --use-ruleset test10
+    ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp --use-ruleset test10
 
-  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-  │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-  │ water distribution networks.`                                                                                                                              │
-  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
+    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
+    │ water distribution networks.`                                                                                                                              │
+    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-                           ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
-                           │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 6 errors, 0 warnings │                          
-                           ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
+                             ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
+                             │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 6 errors, 0 warnings │                          
+                             ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
 
-  ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
+    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
 
-    🔴  MILOPS_1_0_Options 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                              
-              {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-              "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-              "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-              "specific_gravity": 1...[+1647 chars]                                                                                                             
-    🔴  MILOPS_1_0_Options 'rule_simulation_time_horizon' -> Simulation time horizon 936400.0 seconds not equal to schedule time horizon 86400 seconds          
-              {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-              "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-              "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-              "specific_gravity": 1...[+1647 chars]                                                                                                             
+      🔴  MILOPS_1_0_Options 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                              
+                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
+                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
+                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
+                "specific_gravity": 1...[+1647 chars]                                                                                                             
+      🔴  MILOPS_1_0_Options 'rule_simulation_time_horizon' -> Simulation time horizon 936400.0 seconds not equal to schedule time horizon 86400 seconds          
+                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
+                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
+                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
+                "specific_gravity": 1...[+1647 chars]                                                                                                             
 
-  ─────────────────────────────────────────────────────────────────────────── Links ────────────────────────────────────────────────────────────────────────────
+    ─────────────────────────────────────────────────────────────────────────── Links ────────────────────────────────────────────────────────────────────────────
 
-    🔴  MILOPS_1_0_Links 'rule_check_valves' -> Check valves not supported                                                                                      
-              {"name": "112", "link_type": "Pipe", "start_node_name": "12", "end_node_name": "22", "bulk_coeff": null, "check_valve": true,                     
-              "diameter": 0.30479999999999996, "initial_setting": null, "initial_status": "Open", "length": 1609.344, "minor_loss": 0.0,                        
-              "roughness": 100.0, "tag": null, "vertices": [], "wall_coeff": null}                                                                              
-    🔴  MILOPS_1_0_Links 'rule_no_valves_allowed' -> Valve links not supported                                                                                  
-              {"name": "111", "link_type": "Valve", "start_node_name": "11", "end_node_name": "21", "valve_type": "PRV", "diameter":                            
-              0.19999999999919998, "initial_setting": 39.99999999974152, "initial_status": "Active", "minor_loss": 0.0, "tag": null, "vertices": []}            
+      🔴  MILOPS_1_0_Links 'rule_check_valves' -> Check valves not supported                                                                                      
+                {"name": "112", "link_type": "Pipe", "start_node_name": "12", "end_node_name": "22", "bulk_coeff": null, "check_valve": true,                     
+                "diameter": 0.30479999999999996, "initial_setting": null, "initial_status": "Open", "length": 1609.344, "minor_loss": 0.0,                        
+                "roughness": 100.0, "tag": null, "vertices": [], "wall_coeff": null}                                                                              
+      🔴  MILOPS_1_0_Links 'rule_no_valves_allowed' -> Valve links not supported                                                                                  
+                {"name": "111", "link_type": "Valve", "start_node_name": "11", "end_node_name": "21", "valve_type": "PRV", "diameter":                            
+                0.19999999999919998, "initial_setting": 39.99999999974152, "initial_status": "Active", "minor_loss": 0.0, "tag": null, "vertices": []}            
 
-  ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
+    ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
 
-    🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
-              {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
-    🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
-              {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
+      🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
+                {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
+      🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
+                {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
 
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Invalid network without ``strict`` ruleset (failed run)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
-  ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp
+    ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp
 
-  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-  │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-  │ water distribution networks.`                                                                                                                              │
-  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
+    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
+    │ water distribution networks.`                                                                                                                              │
+    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-                           ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
-                           │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 3 errors, 0 warnings │                          
-                           ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
+                             ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
+                             │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 3 errors, 0 warnings │                          
+                             ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
 
-  ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
+    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
 
-    🔴  WNTREPANETOptions 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                               
-              {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-              "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-              "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-              "specific_gravity": 1...[+1647 chars]                                                                                                             
+      🔴  WNTREPANETOptions 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                               
+                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
+                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
+                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
+                "specific_gravity": 1...[+1647 chars]                                                                                                             
 
-  ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
+    ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
 
-    🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
-              {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
-    🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
-              {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
+      🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
+                {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
+      🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
+                {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
 
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Valid network without any rule violations (success)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: console
-  ❯ epanetparser -f ../../../models/epanetparser_test_models/valid_network.inp --use-ruleset milops10
+    ❯ epanetparser -f ../../../models/epanetparser_test_models/valid_network.inp --use-ruleset milops10
 
-  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-  │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-  │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-  │ water distribution networks.`                                                                                                                              │
-  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
+    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
+    │ water distribution networks.`                                                                                                                              │
+    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-                             ╭──────────────────────────────────────────────────────────────────────────────────────────────────────╮                           
-                             │ Parser results for '../../../models/epanetparser_test_models/valid_network.inp': 0 errors, 1 warning │                           
-                             ╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯                           
+                               ╭──────────────────────────────────────────────────────────────────────────────────────────────────────╮                           
+                               │ Parser results for '../../../models/epanetparser_test_models/valid_network.inp': 0 errors, 1 warning │                           
+                               ╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯                           
 
-  ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
+    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
 
-    🟡  MILOPS_1_0_Options 'warn_inpfile_units' -> Units not in litres per second. Units in INP file will be different than simulated                           
-              {"time": {"duration": 86400.0, "hydraulic_timestep": 3600, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,               
-              "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-              "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-              "specific_gravity": 1....[+1646 chars]                                                                                                            
+      🟡  MILOPS_1_0_Options 'warn_inpfile_units' -> Units not in litres per second. Units in INP file will be different than simulated                           
+                {"time": {"duration": 86400.0, "hydraulic_timestep": 3600, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,               
+                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
+                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
+                "specific_gravity": 1....[+1646 chars]                                                                                                            
 
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  File: valid_network.inp
-  sha256: ac05b0412f7f70e5ae10c18fbe3f1daeca880906a0b78067f3fb5c8a6e875bf2
-  Nodes: 11
-  Links: 13
-  Curves: 1
-  Patterns: 1
+    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    File: valid_network.inp
+    sha256: ac05b0412f7f70e5ae10c18fbe3f1daeca880906a0b78067f3fb5c8a6e875bf2
+    Nodes: 11
+    Links: 13
+    Curves: 1
+    Patterns: 1
 
