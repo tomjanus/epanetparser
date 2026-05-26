@@ -6,7 +6,22 @@
 EPANET Parser -- A toolkit for validating EPANET models
 =======================================================
 
-What is EPANET Parser
+.. note::
+   
+   **🚧 Active Development Notice**
+   
+   **EPANETParser** is currently under active development. While the core functionality 
+   is operational, some features are still being refined and documentation is being 
+   updated. The tool is usable for:
+   
+   * Validating EPANET network models in INP or WNTR JSON formats
+   * Converting between INP and JSON formats
+   * Applying custom validation rulesets
+   
+   Please report any issues or suggestions at https://github.com/tomjanus/epanetparser/issues
+   
+   Expected stable release: Coming soon!
+
 ---------------------
 
 **EPANETParser** is a fork of **PywrParser** -- *"An experimental parser 
@@ -26,6 +41,9 @@ What does EPANETParser take from PywrParser and what is new?
 The structure of the package remains largely the same as **PywrParser**, with modifications
 specific to **EPANET** network models. The core parsing and validation framework has been
 adapted to work with EPANET-specific components and their associated validation rules.
+
+Specifically, the errors and warning display mechanisms are the same as in **PywrParser**
+
 
 Motivation
 ----------
