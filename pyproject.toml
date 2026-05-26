@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "pywrparser"
-version = "0.2.0"
-description = "A parser and toolkit for Pywr networks"
-authors = ["Paul Slavin <pmslavin@gmail.com>"]
+name = "epanetparser"
+version = "0.1.0"
+description = "A parser and toolkit for EPANET networks represented in WNTR JSON format"
+authors = ["Paul Slavin <pmslavin@gmail.com>", "Tomasz Janus <tomasz.k.janus@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -19,7 +19,7 @@ pytest-cov = "^3.0.0"
 nox = "^2022.1.7"
 
 [tool.poetry.scripts]
-pywrparser = "pywrparser.parse:run"
+epanetparser = "epanetparser.parse:run"
 
 [tool.poetry.group.dev.dependencies]
 sphinx = "^5"
