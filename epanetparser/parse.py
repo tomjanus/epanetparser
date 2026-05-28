@@ -12,6 +12,10 @@ sources, and controls.
 
 Subcommands
 -----------
+download-extra : Download extra network files
+    Download files from GitHub release using the 'networks' preset. Provides options
+    for showing progress and controlling console output.
+
 validate : Validate EPANET models
     Parse and validate EPANET network models in INP or WNTR JSON format with
     support for custom validation rulesets. Provides detailed error and warning
@@ -20,6 +24,11 @@ validate : Validate EPANET models
 convert : Convert between formats
     Bidirectional conversion between EPANET INP (text) and WNTR JSON formats.
     Supports custom output paths and configurable JSON indentation.
+
+download : Download network files
+    Download files from Google Drive using presets (e.g., 'networks') or
+    manually specify a folder URL and output directory. Presets provide
+    quick access to commonly used resources like benchmark networks.
     
 info : Display parser information
     Show parser version information and list available validation rulesets.
@@ -46,6 +55,11 @@ Convert between formats:
     $ epanetparser convert network.inp output.json
     $ epanetparser convert network.json output.inp
     $ epanetparser convert network.inp --indent 4
+
+Download files:
+    $ epanetparser download networks
+    $ epanetparser download "https://drive.google.com/.../folder_id" ./my_data
+    $ epanetparser download networks --mode files --quiet
 
 Display information:
     $ epanetparser info
@@ -81,6 +95,8 @@ from epanetparser.display import (
 from epanetparser.epanet_types.network import WNTREPANETNetwork
 from epanetparser.lib.converter import WNTRINPJSONConverter
 from epanetparser.utils import sha256digest
+from epanetparser.download import download_networks
+from epanetparser.environment import PackageResolver
 
 RichHelpFormatter.usage_markup = True
 
@@ -88,9 +104,10 @@ RichHelpFormatter.usage_markup = True
 def configure_args(args: List[str]) -> argparse.Namespace:
     """Configure and parse command-line arguments for the EPANET validator.
     
-    Sets up an argument parser with three subcommands:
+    Sets up an argument parser with four subcommands:
     - validate: Validate an EPANET model with ruleset support
     - convert: Convert between INP and JSON formats
+    - download: Download files from Google Drive (presets or manual)
     - info: Display parser information and available rulesets
     
     Args:
@@ -121,6 +138,25 @@ def configure_args(args: List[str]) -> argparse.Namespace:
         dest="command",
         title="available commands",
         metavar=""
+    )
+    
+    # ========== DOWNLOAD SUBCOMMAND ==========
+    download_parser = subparsers.add_parser(
+        "download-extra",
+        help="Download extra 'networks'",
+        formatter_class=RichHelpFormatter
+    )
+    
+    download_parser.add_argument("--progress",
+        action="store_true",
+        default=True,
+        help="Show progress when downloading files."
+    ) 
+
+    download_parser.add_argument("--quiet",
+        action="store_true",
+        default=False,
+        help="Display parsing report on the console with colour (default)"
     )
     
     # ========== VALIDATE SUBCOMMAND ==========
@@ -239,6 +275,21 @@ def configure_args(args: List[str]) -> argparse.Namespace:
         sys.exit(0)
 
     return parser.parse_args(args)
+
+
+def handle_download(args: argparse.Namespace) -> None:
+    """Handle the 'download-extra' command for downloading files from GitHub relase.
+    """
+    resolver = PackageResolver()
+    info = resolver.resolve()
+    rprint(info)
+    distribution_root = info.distribution_root
+    root_folder = distribution_root if distribution_root else info.project_root
+    download_folder = root_folder / "epanetparser" / "networks" / "extra"
+    download_networks(
+        output_dir = download_folder,
+        progress_bar=args.progress,
+        quiet=args.quiet)
 
 
 def handle_validate(args: argparse.Namespace) -> None:
@@ -399,6 +450,8 @@ def handle_args(args: argparse.Namespace) -> None:
         handle_convert(args)
     elif args.command == "info":
         handle_info(args)
+    elif args.command == "download-extra":
+        handle_download(args)
     else:
         # This shouldn't happen if argparse is configured correctly
         rprint(f"[red]Error:[/red] No command specified. Use --help for usage information.", file=sys.stderr)

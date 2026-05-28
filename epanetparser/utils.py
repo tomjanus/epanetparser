@@ -10,14 +10,11 @@ from __future__ import annotations
 from typing import Tuple, Any, Optional, TYPE_CHECKING
 import functools
 import hashlib
-import inspect
-import json
 import re
 from epanetparser.epanet_types.exceptions import (
     WNTREPANETTypeValidationError,
     WNTREPANETTypeValidationErrorBundle
 )
-from epanetparser.epanet_types.warnings import WNTREPANETTypeValidationWarning
 
 if TYPE_CHECKING:
     from epanetparser.epanet_types.base import WNTREPANETType
@@ -220,3 +217,7 @@ def sha256digest(filename: str) -> str:
                 break
             sha256.update(buf)
     return sha256.hexdigest()
+
+
+if __name__ == "__main__":
+    pass
