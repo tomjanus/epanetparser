@@ -4,11 +4,32 @@ version = "0.1.0"
 description = "A parser and toolkit for EPANET networks represented in WNTR JSON format"
 authors = ["Paul Slavin <pmslavin@gmail.com>", "Tomasz Janus <tomasz.k.janus@gmail.com>"]
 
+# Main package (networks folder is now inside epanetparser/)
+packages = [
+    { include = "epanetparser" }
+]
+
+# Force include extra networks even though gitignored
+include = [
+    { path = "epanetparser/networks/extra/**/*", format = ["sdist", "wheel"] }
+]
+
+# Optionally include documentation and tests in distribution
+# include = [
+#     "docs/**/*",
+#     "tests/**/*"
+# ]
+
 [tool.poetry.dependencies]
 python = "^3.8"
 rich = "^12.2.0"
+gdown = "^6.0.0"
+wntr = "^1.4.0"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.scripts]
+epanetparser = "epanetparser.parse:run"
+
+[tool.poetry.group.dev.dependencies]
 pytest = "^7.2"
 pudb = "^2022.1.1"
 coverage = "^6.3.2"
@@ -17,11 +38,6 @@ mypy = "^0.942"
 flake8 = "^4.0.1"
 pytest-cov = "^3.0.0"
 nox = "^2022.1.7"
-
-[tool.poetry.scripts]
-epanetparser = "epanetparser.parse:run"
-
-[tool.poetry.group.dev.dependencies]
 sphinx = "^5"
 sphinx-rtd-theme = "^1.1.1"
 
