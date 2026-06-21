@@ -13,8 +13,8 @@ from rich.align import Align
 from rich.console import Console
 from rich.padding import Padding
 from rich.panel import Panel
-from epanetparser import rules
-from epanetparser.utils import sha256digest
+from epanetparser.core import rulesets
+from epanetparser.core.utils import sha256digest
 
 # Instantiate the console upon loading the file
 console = Console()
@@ -150,7 +150,7 @@ def results_as_dict(
     if isinstance(filename, io.StringIO):
         filename = "stdin"
     fbasename = os.path.basename(filename)
-    ruleset = rules.get_ruleset_module(rules.ACTIVE_RULESET_KEY)
+    ruleset = rulesets.get_ruleset_module(rulesets.ACTIVE_RULESET_KEY)
     ruleset_name = ruleset.__ruleset_name__ if ruleset else "Default"
     ret = {
         "parse_results": {

@@ -24,23 +24,12 @@ from typing import Optional, Any, Dict, List, Tuple
 import json
 from collections import defaultdict
 from functools import partial
-
-from epanetparser import rules
-from epanetparser.epanet_types import (
-    WNTREPANETNetworkInfo,
-    WNTREPANETOptions,
-    WNTREPANETCurve,
-    WNTREPANETPattern,
-    WNTREPANETNode,
-    WNTREPANETLink,
-    WNTREPANETSource,
-    WNTREPANETControl
-)
-from epanetparser.epanet_types.exceptions import (
+from epanetparser.core import ruleset_registry as rulesets
+from epanetparser.core.epanettypes.exceptions import (
     WNTREPANETParserException,
     WNTREPANETNetworkValidationError
 )
-from epanetparser.utils import raiseorpush
+from epanetparser.core.utils import raiseorpush
 
 # Constants for handling duplicate keys in JSON
 DUP_KEY_BASE = "__WNTREPANETParser_Duplicate_Key_{pattern}__"
@@ -142,15 +131,14 @@ class WNTRJSONParser:
         Raises:
             WNTREPANETParserException: If the specified ruleset key is not found.
         """
-        rulesets = rules.get_rulesets()
-        if ruleset not in rulesets:
+        _rulesets = rulesets.get_rulesets_metadata()
+        if ruleset not in _rulesets:
             raise WNTREPANETParserException(f"No ruleset with key: {ruleset}")
-
-        import importlib
-        import epanetparser.epanet_types
-        rules.set_active_ruleset(ruleset)
-        importlib.reload(epanetparser.epanet_types)
-        from epanetparser.epanet_types import (
+        import importlib # pylint: disable=import-outside-toplevel
+        import epanetparser.epanettypes # pylint: disable=import-outside-toplevel
+        rulesets.set_active_ruleset(ruleset)
+        importlib.reload(epanetparser.epanettypes)
+        from epanetparser.core.epanettypes import ( # pylint: disable=import-outside-toplevel, redefined-outer-name, reimported, unused-import
             WNTREPANETNetworkInfo,
             WNTREPANETOptions,
             WNTREPANETCurve,

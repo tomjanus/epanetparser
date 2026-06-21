@@ -86,17 +86,17 @@ from typing import List
 from rich_argparse import RichHelpFormatter
 from rich import print as rprint
 
-from epanetparser import rules, __version__
-from epanetparser.display import (
+from epanetparser.core import  rulesets, __version__
+from epanetparser.core.display import (
     console,
     results_as_json,
     write_results
 )
-from epanetparser.epanet_types.network import WNTREPANETNetwork
-from epanetparser.lib.converter import WNTRINPJSONConverter
-from epanetparser.utils import sha256digest
-from epanetparser.download import download_networks
-from epanetparser.environment import PackageResolver
+from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+from epanetparser.core.lib.converter import WNTRINPJSONConverter
+from epanetparser.core.utils import sha256digest
+from epanetparser.core.download import download_networks
+from epanetparser.core.environment import PackageResolver
 
 RichHelpFormatter.usage_markup = True
 
@@ -122,7 +122,7 @@ def configure_args(args: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="epanetparser",
         epilog="The tool is an adaptation of the toolkit for parsing and validating Pywr models written by Paul Slavin, https://github.com/pmslavin/pywrparser, https://pmslavin.github.io/pywrparser\n",
-        description="Parser and validator for water distribution network (WDN) models in EPANET format.",
+        description="Parser and validator of EPANET water distribution network models.",
         formatter_class=RichHelpFormatter
     )
     
@@ -143,7 +143,7 @@ def configure_args(args: List[str]) -> argparse.Namespace:
     # ========== DOWNLOAD SUBCOMMAND ==========
     download_parser = subparsers.add_parser(
         "download-extra",
-        help="Download extra 'networks'",
+        help="Download additional networks from GitHub release for testing and benchmarking",
         formatter_class=RichHelpFormatter
     )
     
@@ -232,7 +232,7 @@ def configure_args(args: List[str]) -> argparse.Namespace:
     # ========== CONVERT SUBCOMMAND ==========
     convert_parser = subparsers.add_parser(
         "convert",
-        help="Convert between EPANET INP and WNTR JSON formats",
+        help="Convert between EPANET's native INP format and WNTR JSON format",
         formatter_class=RichHelpFormatter
     )
     convert_parser.add_argument(
@@ -313,8 +313,8 @@ def handle_validate(args: argparse.Namespace) -> None:
 
     # Validate ruleset if specified
     if ruleset:
-        rulesets = rules.get_rulesets()
-        if ruleset not in rulesets:
+        _rulesets = rulesets.get_rulesets_metadata()
+        if ruleset not in _rulesets:
             rprint(f"No ruleset with key: {ruleset}", file=sys.stderr)
             sys.exit(1)
 
@@ -416,7 +416,7 @@ def handle_info(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments specific to the 'info' command.
     """
     if args.list_rulesets:
-        console.print(rules.describe_rulesets(), end="")
+        console.print(rulesets.describe_rulesets(), end="")
     else:
         # Display general parser information
         console.print(f"[bold]EPANET Parser[/bold] version {__version__}")
