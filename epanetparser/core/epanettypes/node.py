@@ -3,7 +3,7 @@ from collections.abc import KeysView
 from typing import Optional, Dict, List, Tuple
 import copy
 from .base import WNTREPANETType
-from epanetparser.utils import match
+from epanetparser.core.decorators import match
 
 
 class WNTREPANETNode(WNTREPANETType):

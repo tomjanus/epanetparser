@@ -5,7 +5,7 @@ to handle validation errors at different levels (network, component, type).
 It also provides bundled exceptions that can contain multiple errors and warnings.
 """
 from typing import Dict, List, Any
-from .warnings import WNTREPANETParserWarning
+from .validation_warnings import WNTREPANETParserWarning
 
 
 class WNTREPANETParserException(Exception):

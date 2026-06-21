@@ -71,16 +71,17 @@ class WNTREPANETTypeValidationWarning(WNTREPANETParserWarning):
         }
 
 
-class WNTREPANETNameWarning(WNTREPANETParserWarning):
-    """Warning raised for issues related to component naming.
-    
-    This warning is raised when component names may cause issues or
-    don't follow recommended naming conventions.
-    
-    Args:
-        message: Human-readable warning message describing the naming issue.
-        component: Name/type of the component with the naming issue.
-    """
-    def __init__(self, message: str, component: str) -> None:
-        super().__init__(message)
-        self.component = component
+
+#class WNTREPANETNameWarning(WNTREPANETParserWarning):
+#   """Warning raised for issues related to component naming.
+#    
+#    This warning is raised when component names may cause issues or
+#    don't follow recommended naming conventions.
+#    
+#    Args:
+#        message: Human-readable warning message describing the naming issue.
+#        component: Name/type of the component with the naming issue.
+#    """
+#    def __init__(self, message: str, component: str) -> None:
+#        super().__init__(message)
+#        self.component = component

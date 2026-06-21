@@ -18,5 +18,6 @@ class WNTREPANETLink(WNTREPANETType):
         return self.data.get("name")
     
     def rule_link_has_valid_type(self) -> None:
+        """Verify that the link type is one of the supported types."""
         assert self.type in self.link_types, \
             f"Unsupported link type {self.type}"
