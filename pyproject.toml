@@ -27,7 +27,8 @@ gdown = "^6.0.0"
 wntr = "^1.4.0"
 
 [tool.poetry.scripts]
-epanetparser = "epanetparser.parse:run"
+epanetparser = "epanetparser.core.parse:run"
+epanetparser-plugins = "epanetparser.core.plugins_cli:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2"
@@ -57,3 +58,4 @@ testpaths = ["tests"]
 
 [mypy]
 python_version = "3.8.10"
+
