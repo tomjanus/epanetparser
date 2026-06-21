@@ -16,15 +16,6 @@ These are standard EPANET example networks that are **shipped with the package**
 | **Net6.inp** | Network used for formulation and optimization of robust sensor placement problems for drinking water contamination warning systems | WNTR distribution example network, Watson, J.P., Murray, R. and Hart, W.E., 2009 |
 | **Anytown.inp** | Classic benchmark network used extensively in research for optimal design and operation studies | Walski et al. (1987) - Battle of the Network Models |
 
-### 🧪 Test Networks (`test/`)
-
-Minimal test networks used for **quick validation testing** of the parser functionality. These networks are **shipped with the package** and include both valid and intentionally invalid models to test error detection capabilities.
-
-| Network | Description |
-|---------|-------------|
-| **test_valid_network.inp/json** | Minimal valid EPANET network for positive test cases |
-| **test_invalid_network.inp/json** | Network with intentional errors for negative test cases |
-
 ### 🌐 Extra Networks (`extra/`)
 
 Extended collection of benchmark and research networks imported from the **WNTR (Water Network Tool for Resilience)** package. These networks **need to be downloaded from external sources** and are used for comprehensive benchmarking and advanced testing scenarios.
@@ -60,8 +51,8 @@ package_dir = Path(epanetparser.__file__).parent.parent
 core_networks = package_dir / "networks" / "core"
 net1_path = core_networks / "Net1.inp"
 
-# Access test networks
-test_networks = package_dir / "networks" / "test"
+# Access additional (extra) networks
+extra_networks = package_dir / "networks" / "extra"
 ```
 
 ### Obtaining Extra Networks
@@ -83,7 +74,7 @@ The `epanetparser` package can validate and convert between both formats.
 ## Contributing
 
 To add new benchmark networks:
-1. Place INP files in the appropriate subdirectory (`core/` or `extra/`)
+1. Place **INP** files in the appropriate subdirectory (`core/` or `extra/`)
 2. Ensure proper documentation of the network source
 3. Include both `.inp` and `.json` formats when possible. Conversion to `.json` can be performed using the `epanetparser` CLI - see usage.
 4. Update this **README** with network details
