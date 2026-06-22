@@ -6,12 +6,14 @@ including rule/warning method introspection and file hashing utilities.
 import pytest
 import tempfile
 import os
+import logging
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 from epanetparser.core.utils import (
     get_rule_methods,
     get_warning_methods,
     sha256digest,
-    raiseorpush
+    raiseorpush,
 )
 from epanetparser.core.epanettypes import WNTREPANETNode, WNTREPANETLink
 from epanetparser.core.epanettypes.exceptions import (
@@ -19,6 +21,7 @@ from epanetparser.core.epanettypes.exceptions import (
     WNTREPANETTypeValidationErrorBundle
 )
 from collections import defaultdict
+from rich.logging import RichHandler
 
 
 class TestGetRuleMethods:
