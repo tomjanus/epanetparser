@@ -1,0 +1,21 @@
+--- # Default configuration for epanetparser
+rule_discovery:
+  base_paths:
+    - epanetparser.rules
+  metadata_fields:
+    - component_type
+  entry_point_group: epanetparser.rules
+  file_patterns:
+    - "*_rules.py"
+    - "*_warnings.py"
+
+ruleset_discovery:
+  base_paths:
+    - epanetparser.rulesets
+  metadata_fields:
+    - __key__
+    - __ruleset_name__
+    - __version__
+  entry_point_group: epanetparser.rulesets
+  file_patterns:
+    - "*.py"
