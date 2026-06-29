@@ -1,4 +1,3 @@
-
 .. |badge1| image:: https://github.com/tomjanus/epanetparser/workflows/CI/badge.svg
 .. |badge2| image:: https://github.com/tomjanus/epanetparser/workflows/sphinx-docs-to-gh-pages/badge.svg
 
@@ -12,23 +11,21 @@
 EPANET Parser -- A toolkit for validating EPANET models
 =======================================================
 
-.. note::
-   
-   **🚧 Active Development Notice**
-   
-   **EPANETParser** is currently under active development. While the core functionality 
-   is operational, some features are still being refined and documentation is being 
-   updated. The tool is usable for:
-   
-   * Validating EPANET network models in INP or WNTR JSON formats
-   * Converting between INP and JSON formats
-   * Applying custom validation rulesets
-   
-   Please report any issues or suggestions at https://github.com/tomjanus/epanetparser/issues
-   
-   Expected stable release: Coming soon!
+**🚧 Active Development Notice**
 
----------------------
+**EPANETParser** is currently under active development. While the core functionality 
+is operational, some features are still being refined and documentation is being 
+updated. The tool is usable for:
+
+* Validating EPANET network models in INP or WNTR JSON formats
+* Converting between INP and JSON formats
+* Applying custom validation rulesets
+
+Please report any issues or suggestions at https://github.com/tomjanus/epanetparser/issues
+
+Expected stable release: Coming soon!
+
+----
 
 **EPANETParser** is a fork of **PywrParser** -- *"An experimental parser 
 for Pywr json network definitions"* developed by Dr. Paul Slavin from the University 
@@ -66,10 +63,10 @@ EPANETParser Structure
 
 **EPANETParser** is built upon the following core components:
 
-- `WNTRJSONParser`: The main parser class that orchestrates the parsing and validation of EPANET network models in WNTR JSON format.
-- `WNTREPANETType`: The base class for all EPANET network components, such as nodes, links, patterns, controls, etc. It provides common functionality for validation and rule management.
-- `WNTREPANETTypeValidator`: A descriptor class that handles the validation of individual attributes of EPANET network components. It allows for the definition of validation rules and their application to specific attributes.
-- `WNTREPANETTypeValidationErrorBundle`: A class that collects and manages validation errors and warnings encountered during the parsing process. It provides a structured way to report issues found during validation.
+* `WNTRJSONParser`: The main parser class that orchestrates the parsing and validation of EPANET network models in WNTR JSON format.
+* `WNTREPANETType`: The base class for all EPANET network components, such as nodes, links, patterns, controls, etc. It provides common functionality for validation and rule management.
+* `WNTREPANETTypeValidator`: A descriptor class that handles the validation of individual attributes of EPANET network components. It allows for the definition of validation rules and their application to specific attributes.
+* `WNTREPANETTypeValidationErrorBundle`: A class that collects and manages validation errors and warnings encountered during the parsing process. It provides a structured way to report issues found during validation.
 
 The UML diagram describing the core EPANETParser classes and their relationships can be found in the `docs/epanetparser_class_hierarchy.puml` file. 
 This diagram provides a visual representation of the class hierarchy and the interactions between the different components of the parser.
@@ -89,9 +86,9 @@ Validation Architecture
 
 Each base **component** and the whole **network** (container of components) - all of which are defined in `epanetparser.core.epanettypes` - can be associated with validation rules and warnings which are defined in three separate places:
 
-- base class definitions
-- core rule definitions managed in rule registry
-- rulesets autodiscovered by the rulesets module
+* base class definitions
+* core rule definitions managed in rule registry
+* rulesets autodiscovered by the rulesets module
 
 During validation the following steps are carried out in this order:
 
@@ -108,8 +105,8 @@ The water community keeps building various tools either to extend **EPANET** cap
 or as new tools that are made to work with **EPANET** or that use **EPANET** for simulating
 water distribution networks (WDNs). Some examples include:
 
-- `MAGNets <https://github.com/meghnathomas/MAGNets>`_ -- *A Python package to aggregate and reduce water distribution network models*
-- `MILPNet <https://github.com/meghnathomas/MILPNet>`_ -- *Mixed-Integer Linear Programming framework for water distribution system optimization*
+* `MAGNets <https://github.com/meghnathomas/MAGNets>`_ -- *A Python package to aggregate and reduce water distribution network models*
+* `MILPNet <https://github.com/meghnathomas/MILPNet>`_ -- *Mixed-Integer Linear Programming framework for water distribution system optimization*
 
 These tools may impose certain restrictions on the networks, e.g., a mixed-integer linear
 optimizer for pump scheduling might impose certain restrictions on the network such as
@@ -145,15 +142,15 @@ Plugins vs Rulesets
 
 **When to use Plugins:**
 
-- Universal validation that applies to ALL EPANET models
-- Shared standards across projects
-- External package providing validation
+* Universal validation that applies to ALL EPANET models
+* Shared standards across projects
+* External package providing validation
 
 **When to use Rulesets:**
 
-- Domain-specific constraints (pump scheduling, leakage detection method, etc. that do not work on all generic networks)
-- Switchable validation contexts
-- Temporary/experimental rules
+* Domain-specific constraints (pump scheduling, leakage detection method, etc. that do not work on all generic networks)
+* Switchable validation contexts
+* Temporary/experimental rules
 
 Applications
 ------------
