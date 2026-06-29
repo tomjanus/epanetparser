@@ -1,7 +1,13 @@
+
 .. |badge1| image:: https://github.com/tomjanus/epanetparser/workflows/CI/badge.svg
 .. |badge2| image:: https://github.com/tomjanus/epanetparser/workflows/sphinx-docs-to-gh-pages/badge.svg
 
 |badge1| |badge2|
+
+.. image:: assets/banner.png
+   :alt: Banner
+   :width: 100%
+   :align: center
 
 EPANET Parser -- A toolkit for validating EPANET models
 =======================================================
@@ -59,10 +65,11 @@ EPANETParser Structure
 ----------------------
 
 **EPANETParser** is built upon the following core components:
+
 - `WNTRJSONParser`: The main parser class that orchestrates the parsing and validation of EPANET network models in WNTR JSON format.
-- `WNTREPANETType``: The base class for all EPANET network components, such as nodes, links, patterns, controls, etc. It provides common functionality for validation and rule management.
-- `WNTREPANETTypeValidator``: A descriptor class that handles the validation of individual attributes of EPANET network components. It allows for the definition of validation rules and their application to specific attributes.
-- `WNTREPANETTypeValidationErrorBundle`: A class that collects and manages validation errors and warnings encountered during the parsing process. It provides a structured way to report issues found in
+- `WNTREPANETType`: The base class for all EPANET network components, such as nodes, links, patterns, controls, etc. It provides common functionality for validation and rule management.
+- `WNTREPANETTypeValidator`: A descriptor class that handles the validation of individual attributes of EPANET network components. It allows for the definition of validation rules and their application to specific attributes.
+- `WNTREPANETTypeValidationErrorBundle`: A class that collects and manages validation errors and warnings encountered during the parsing process. It provides a structured way to report issues found during validation.
 
 The UML diagram describing the core EPANETParser classes and their relationships can be found in the `docs/epanetparser_class_hierarchy.puml` file. 
 This diagram provides a visual representation of the class hierarchy and the interactions between the different components of the parser.
@@ -72,30 +79,26 @@ This file contains the main validation logic, including the application of rules
 
 The validation mechanism relies on and leverages the descriptor protocol, which allows for the definition 
 of validation rules as methods on the `WNTREPANETType` classes. The descriptor implemented in `WNTREPANETTypeValidator` 
-is used for the discrovery of rule and warning methods and their application to the attributes of the EPANET network components
+is used for the discovery of rule and warning methods and their application to the attributes of the EPANET network components
 upon assigning each network component to the `WNTRJSONParser`. 
 The validation process is initiated by calling the `validate()` method on the `WNTRJSONParser` instance, 
 which triggers the validation of all network components and their associated rules.
 
-HERE, talk about component-level and network-level rules - WRITE SUPPORTING CODE FOR THAT!
+Validation Architecture
+~~~~~~~~~~~~~~~~~~~~~~~
 
-Architecture
-~~~~~~~~~~~~
+Each base **component** and the whole **network** (container of components) - all of which are defined in `epanetparser.core.epanettypes` - can be associated with validation rules and warnings which are defined in three separate places:
 
-Each base **component** and the whole **network** (container of components) - all of which are defined in `epanetparser.core.epanettypes` - can be associated with validation rules and warnings which are defined in three separate places: - *base class definitions* 
-- *core rule definitions* managed in rule registry
-- *rulesets* autodiscoved by the rulesets module
+- base class definitions
+- core rule definitions managed in rule registry
+- rulesets autodiscovered by the rulesets module
 
-*base class definitions* are not recommended in order enforce strict rule definitions in separate places such that the community will be able to collaboratively specify core rules without having to modify base classes and risk breaking the core functionality of `epanetparser`.
-*core rule definitions* are managed via rule registry and enable defining different core rule standards, e.g. for different EPANET versions or levels of strictness.
-*rulesets* are additional sets of rules and warnings that are defined for a specific application and can be thought of as additional restrictions imposed on top of generic network validation rules and warnings.
-
-During validation the following steps are carried out in this very particular order:
+During validation the following steps are carried out in this order:
 
 1. Collect all warnings and rules for all network components, i.e. from base class definitions, rule registry, and rulesets.
-2. Check for any conflicts and repeated rule definitions, if there exist any conflicts, preserve only those rules and warnings with the highest priority. Priority is set as follows (in order of decreasing priority): base class definitions -> core rule definitions -> rulesets. I.e. a rule from a ruleset cannot ovewrite a core rule
+2. Check for any conflicts and repeated rule definitions. If there exist any conflicts, preserve only those rules and warnings with the highest priority. Priority is set as follows (in order of decreasing priority): base class definitions → core rule definitions → rulesets. I.e., a rule from a ruleset cannot overwrite a core rule.
 3. Execute instance rules (from base class)
-4. Execute plugin rules (from registry)  
+4. Execute plugin rules (from registry)
 5. Execute ruleset rules (from active ruleset subclass)
 
 Motivation
@@ -137,20 +140,20 @@ For example, in case of a hypothetical test ruleset called `test1.0`, the use of
 prohibited. This restriction could be applied within a package that does not allow check valves, 
 e.g., due to certain limitations of the computational engine.
 
-Usage
------
+Plugins vs Rulesets
+-------------------
 
-When to use Plugins:
+**When to use Plugins:**
+
 - Universal validation that applies to ALL EPANET models
 - Shared standards across projects
 - External package providing validation
 
-When to use Rulesets:
-- Domain-specific constraints (pump scheduling, leakage detection method, etc. that do not work on all (generic) networks)
+**When to use Rulesets:**
+
+- Domain-specific constraints (pump scheduling, leakage detection method, etc. that do not work on all generic networks)
 - Switchable validation contexts
 - Temporary/experimental rules
-
-
 
 Applications
 ------------
@@ -182,10 +185,10 @@ EPANETParser can be installed with either `Poetry <https://python-poetry.org>`_ 
 
     ❯ git clone git@github.com:tomjanus/epanetparser.git
     ❯ cd epanetparser
-    ❯ pip install . 
+    ❯ pip install .
 
-Usage
------
+CLI Usage
+---------
 
 The ``epanetparser`` usage can be displayed with:
 
