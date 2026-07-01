@@ -7,7 +7,9 @@ rules and warning checks whenever component data is assigned to an object attrib
 The validator follows the Python descriptor protocol and integrates
 with component classes that define ``rule_*`` and ``warn_*`` methods.
 """
-from typing import Any, Optional
+from __future__ import annotations
+from typing import Any, Optional, TYPE_CHECKING, List, Tuple, Dict, TypeAlias
+from collections.abc import Callable
 import inspect
 import json
 from epanetparser.core.epanettypes.exceptions import (
@@ -15,6 +17,11 @@ from epanetparser.core.epanettypes.exceptions import (
     WNTREPANETTypeValidationErrorBundle
 )
 from epanetparser.core.epanettypes.validation_warnings import WNTREPANETTypeValidationWarning
+if TYPE_CHECKING:
+    from epanetparser.core.epanet_types.base import WNTREPANETType
+
+FuncName: TypeAlias = str
+RuleTrace: TypeAlias = str
 
 
 class WNTREPANETTypeValidator:
@@ -91,7 +98,10 @@ class WNTREPANETTypeValidator:
     WNTREPANETTypeValidationErrorBundle
     """
 
-    def __init__(self, max_value_len: int = 200, store_passed_rules: bool = False) -> None:
+    def __init__(
+            self,
+            max_value_len: int = 200,
+            store_passed_rules: bool = False) -> None:
         """
         Initialize the validator descriptor.
 
@@ -112,8 +122,8 @@ class WNTREPANETTypeValidator:
 
     def __set_name__(self, inst: type, name: str) -> None:
         """
-        Configure descriptor during class creation and determines the internal attribute name used to
-        store validated values on instances.
+        Configure descriptor during class creation and determines the internal 
+        attribute name used to store validated values on instances.
 
         Parameters
         ----------
@@ -141,7 +151,10 @@ class WNTREPANETTypeValidator:
         self.instattr = '_' + name
 
 
-    def __get__(self, inst: Optional['WNTREPANETType'], dtype: Optional[type] = None) -> Any:
+    def __get__(
+            self,
+            inst: Optional[WNTREPANETType],
+            dtype: Optional[type] = None) -> Any:
         """
         Retrieve validated data from an instance.
 
@@ -187,7 +200,7 @@ class WNTREPANETTypeValidator:
         return getattr(inst, self.instattr)
 
 
-    def __set__(self, inst: 'WNTREPANETType', value: dict) -> None:
+    def __set__(self, inst: WNTREPANETType, value: dict) -> None:
         """
         Assign and validate component data.
 
@@ -223,7 +236,7 @@ class WNTREPANETTypeValidator:
         self.validate(inst, value)
 
 
-    def validate(self, inst: 'WNTREPANETType', value: dict) -> None:
+    def validate(self, inst: WNTREPANETType, value: dict) -> None:
         """
         Execute validation rules and warning checks, including warning and
         validation rules in plugins.
@@ -249,76 +262,45 @@ class WNTREPANETTypeValidator:
         WNTREPANETTypeValidationErrorBundle
             Raised if any validation rule fails.
         """
-        from epanetparser.core import get_plugin_registry
-        
-        ifuncs = inspect.getmembers(inst, inspect.ismethod)
-        irules = {n: f for n, f in ifuncs if n.startswith("rule")}
-        iwarns = {n: f for n, f in ifuncs if n.startswith("warn")}
-
-        # ========== ADD PLUGIN SUPPORT ==========
-        # Get plugin registry and load plugin rules/warnings
-        registry = get_plugin_registry()
-        component_type = inst.__class__.__name__
-        # Get plugin rules/warnings and create bound methods
-        plugin_rules = registry.get_rules(component_type)
-        plugin_warns = registry.get_warnings(component_type)
-        # Wrap plugin functions to bind to current instance
-        # Using a factory function to capture the function in the closure properly
-        def make_bound_func(func):
-            return lambda: func(inst)
-        plugin_rule_methods = {
-            name: make_bound_func(func)
-            for name, func in plugin_rules.items()
-        }
-        plugin_warn_methods = {
-            name: make_bound_func(func)
-            for name, func in plugin_warns.items()
-        }
-        # Merge plugin rules/warnings with instance rules/warnings
-        irules.update(plugin_rule_methods)
-        iwarns.update(plugin_warn_methods)
-        # ========== END PLUGIN SUPPORT ==========
-    
-        rules_passed = []
-        exc_bundle = []
-        warn_bundle = []
-        
+        # Dunamically discover rule and warning methods on the instance
+        ifuncs: List[Tuple[FuncName, Any]] = inspect.getmembers(inst, inspect.ismethod)
+        irules: Dict[FuncName, Callable[[], Any]] = {n: f for n, f in ifuncs if n.startswith("rule")}
+        iwarns: Dict[FuncName, Callable[[], Any]] = {n: f for n, f in ifuncs if n.startswith("warn")}
+        rules_passed: Dict[FuncName, RuleTrace] = {}
+        # Record exceptions and warnings as lists of validation error/warning objects
+        exc_bundle: List[WNTREPANETTypeValidationError] = []
+        warn_bundle: List[WNTREPANETTypeValidationWarning] = []
+        # Trim the value for inclusion in error/warning messages
         value_text = self.trim_value(value)
-
         # Process warnings
-        for w, f in iwarns.items():
+        for _func_name, _func in iwarns.items():
             try:
-                f()
-            except AssertionError as e:
+                _func()
+            except AssertionError as err:
                 warn_bundle.append(
                     WNTREPANETTypeValidationWarning(
-                        inst.__class__.__qualname__, w, e, value_text
+                        inst.__class__.__qualname__, _func_name, err, value_text
                     )
                 )
-
         # Process rules
-        for r, f in irules.items():
+        for _func_name, _func in irules.items():
             try:
-                result = f()
+                result = _func()
                 if self.store_passed_rules:
-                    rules_passed.append(f"[PASSED] {r} -> {result}")
-            except AssertionError as e:
+                    rules_passed[_func_name] = f"[PASSED] {_func_name} -> {result}"
+            except AssertionError as err:
                 exc_bundle.append(
                     WNTREPANETTypeValidationError(
-                        inst.__class__.__qualname__, r, e, value_text
+                        inst.__class__.__qualname__, _func_name, err, value_text
                     )
                 )
-
         if self.store_passed_rules:
             inst.rules_passed = rules_passed
-
         if exc_bundle:
             raise WNTREPANETTypeValidationErrorBundle(
                 f"{inst.__class__.__qualname__} rule failures", exc_bundle
             )
-
         inst.warnings = warn_bundle
-
 
     def trim_value(self, value: dict) -> str:
         """
@@ -348,38 +330,312 @@ class WNTREPANETTypeValidator:
 
 
 if __name__ == "__main__":
-    """ """
-    class Pipe:
-
-        data = WNTREPANETTypeValidator(
-            store_passed_rules=True
-        )
-
-        def __init__(self, data):
+    """Interactive demonstration of WNTREPANETTypeValidator.
+    
+    This demo showcases:
+    - Automatic validation on attribute assignment
+    - Rule execution and error bundling
+    - Warning checks and collection
+    - Passed rule tracking
+    - Value truncation in error messages
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.syntax import Syntax
+    from rich import box
+    from epanetparser.core.decorators import described
+    from epanetparser.core.epanettypes.base import (
+        WNTREPANETType, WNTREPANETTypeValidator
+    )
+    
+    console = Console()
+    #console.print("\n[bold cyan]═══ WNTREPANETTypeValidator Demo ═══[/bold cyan]\n")
+    console.rule("[bold cyan]WNTREPANETTypeValidator Demo[/bold cyan]", style="bold cyan")
+    console.print()
+    
+    # Define mock component classes for demonstration
+    class Pipe(WNTREPANETType):
+        """Mock Pipe component with validation rules and warnings."""
+        data = WNTREPANETTypeValidator(store_passed_rules=True, max_value_len=100)
+        def __init__(self, data): # pylint: disable=super-init-not-called
             self.data = data
 
-        def rule_positive_diameter(self):
-            assert self.data["diameter"] > 0, (
-                "Diameter must be positive"
-            )
+        @property
+        def type(self) -> str:
+            return self.data.get("type")
 
+        @described
+        def rule_positive_diameter(self):
+            """Diameter must be greater than zero."""
+            assert self.data["diameter"] > 0, "Diameter must be positive"
+
+        @described
         def rule_has_length(self):
-            assert "length" in self.data, (
-                "Length missing"
-            )
+            """Length field must be present."""
+            assert "length" in self.data, "Length field is required"
+        
+        @described
+        def rule_valid_material(self):
+            """Material must be in allowed list."""
+            allowed = ["PVC", "Steel", "Copper", "Cast Iron"]
+            material = self.data.get("material", "PVC")
+            assert material in allowed, f"Material '{material}' not in {allowed}"
 
         def warn_large_diameter(self):
-            assert self.data["diameter"] < 5000, (
-                "Diameter unusually large"
-            )
+            """Warn if diameter exceeds typical range."""
+            assert self.data["diameter"] < 5000, "Diameter unusually large (>5000mm)"
+        
+        def warn_short_pipe(self):
+            """Warn if pipe is very short."""
+            length = self.data.get("length", 0)
+            assert length >= 10, "Pipe length very short (<10m)"
+    
+    class Junction(WNTREPANETType):
+        """Mock Junction component with different validation rules."""
+        
+        data = WNTREPANETTypeValidator(store_passed_rules=False)
+        
+        def __init__(self, data):  # pylint: disable=super-init-not-called
+            self.data = data
             
-            
-    pipe = Pipe({
+        @property
+        def type(self) -> str:
+            return self.data.get("type")
+        
+        def rule_has_elevation(self):
+            """Elevation field is required."""
+            assert "elevation" in self.data, "Elevation is required for junctions"
+        
+        def rule_valid_demand(self):
+            """Demand must be non-negative."""
+            demand = self.data.get("demand", 0)
+            assert demand >= 0, "Demand cannot be negative"
+        
+        def warn_high_elevation(self):
+            """Warn about unusually high elevation."""
+            elevation = self.data.get("elevation", 0)
+            assert elevation < 1000, "Elevation very high (>1000m)"
+    
+    # Demo 1: Successful validation
+    console.print("[bold]Demo 1: Successful Validation[/bold]", justify='center')
+    console.print("\n[bold]Creating a valid pipe:[/bold]")
+    valid_pipe_data = {
         "diameter": 200,
-        "length": 1500
-    })
-
-    print(pipe.data)
-    print(pipe.rules_passed)
-    print(pipe.warnings)
-    print(pipe.__dict__)
+        "length": 1500,
+        "material": "PVC",
+        "roughness": 100
+    }
+    console.print(Panel(
+        Syntax(f"pipe = Pipe({valid_pipe_data})", "python", theme="monokai"),
+        title="[green]Input Data[/green]",
+        border_style="green"
+    ))
+    
+    try:
+        pipe = Pipe(valid_pipe_data)
+        console.print("✅ [bold green]Validation successful![/bold green]\n")
+        
+        # Show validation results
+        results_table = Table(title="Validation Results", box=box.ROUNDED)
+        results_table.add_column("Aspect", style="cyan")
+        results_table.add_column("Value", style="white")
+        
+        results_table.add_row("Data Stored", f"✓ {len(pipe.data)} fields")
+        results_table.add_row("Rules Passed", f"✓ {len(pipe.rules_passed)} rules")
+        results_table.add_row("Warnings", f"{'⚠ ' + str(len(pipe.warnings)) if pipe.warnings else '✓ None'}")
+        
+        console.print(results_table)
+        console.print()
+        
+        if pipe.rules_passed:
+            console.print("[bold]Passed Rules:[/bold]")
+            for rule_name, rule_trace in pipe.rules_passed.items():
+                console.print(f"  • [green]{rule_trace}[/green]")
+                rule = pipe.get_rule(rule_name)
+                description = getattr(rule, "description", None)
+                if description:
+                    console.print(f"    [blue]Rule description: [/blue][dim]{rule.description}[/dim]")
+                else:
+                    console.print(f"    [blue]Rule description: [/blue][dim]No description available[/dim]")
+        if pipe.warnings:
+            console.print("\n[bold]Warnings:[/bold]")
+            for warning in pipe.warnings:
+                console.print(f"  • [yellow]{warning}[/yellow]")
+    except WNTREPANETTypeValidationErrorBundle as e:
+        console.print(f"[red]✗ Validation failed: {e}[/red]")
+    
+    console.print()
+    
+    # Demo 2: Validation with warnings
+    console.print("[bold]Demo 2: Validation with Warnings[/bold]", justify='center')
+    console.print("\n[bold]Creating a pipe that triggers warnings but doesn't trigger errors:[/bold]")
+    
+    warning_pipe_data = {
+        "diameter": 6000,  # Will trigger large diameter warning
+        "length": 5,       # Will trigger short pipe warning
+        "material": "Steel"
+    }
+    
+    console.print(Panel(
+        Syntax(f"pipe2 = Pipe({warning_pipe_data})", "python", theme="monokai"),
+        title="[yellow]Input Data (with warning triggers)[/yellow]",
+        border_style="yellow"
+    ))
+    
+    try:
+        pipe2 = Pipe(warning_pipe_data)
+        console.print("✅ [bold green]Validation successful![/bold green]")
+        
+        if pipe2.warnings:
+            print(pipe2.warnings)
+            console.print(f"\n⚠️  [bold yellow]Warnings detected ({len(pipe2.warnings)}):[/bold yellow]")
+            for i, warning in enumerate(pipe2.warnings, 1):
+                console.print(Panel(
+                    f"[dim]Rule: {warning.warning}[/dim]\n"
+                    f"[dim]Component: {warning.component}[/dim]\n"
+                    f"[dim]Message: {warning.exc}[/dim]\n"
+                    f"[dim]Value: {warning.valuetext}[/dim]",
+                    title=f"[bold]{warning.message}[/bold]",
+                    border_style="yellow"
+                ))
+        
+    except WNTREPANETTypeValidationErrorBundle as e:
+        console.print(f"[red]✗ Validation failed: {e}[/red]")
+    
+    console.print()
+    
+    # Demo 3: Validation failures (rule violations)
+    console.print("[bold]Demo 3: Validation Failures (Rule Violations)[/bold]", justify='center')
+    console.print("\n[bold]Creating a pipe with invalid data:[/bold]")
+    
+    invalid_pipe_data = {
+        "diameter": -100,  # Invalid: negative diameter
+        # "length" is missing - required field
+        "material": "Wood"  # Invalid: not in allowed materials
+    }
+    
+    console.print(Panel(
+        Syntax(f"pipe3 = Pipe({invalid_pipe_data})", "python", theme="monokai"),
+        title="[red]Input Data (with violations)[/red]",
+        border_style="red"
+    ))
+    
+    try:
+        pipe3 = Pipe(invalid_pipe_data)
+        console.print("✅ [bold green]Validation successful![/bold green]")
+    except WNTREPANETTypeValidationErrorBundle as e:
+        console.print(f"❌ [bold red]Validation failed![/bold red]\n")
+        console.print(f"[red]Error bundle contains {len(e.bundle)} error(s):[/red]\n")
+        
+        for i, error in enumerate(e.bundle, 1):
+            console.print(Panel(
+                f"[dim]Rule: {error.rule}[/dim]\n"
+                f"[dim]Component: {error.component}[/dim]\n"
+                f"[dim]Message: {error.exc}[/dim]\n"
+                f"[dim]Value: {error.valuetext[:80]}...[/dim]",
+                title=f"[bold]{error.message}[/bold]",
+                border_style="red"
+            ))
+    
+    console.print()
+    
+    # Demo 4: Different component type (Junction)
+    console.print("[bold]Demo 4: Different Component Type (Junction)[/bold]", justify='center')
+    console.print("\n[bold]Creating a junction with different validation rules:[/bold]")
+    
+    valid_junction_data = {
+        "name": "J1",
+        "elevation": 100,
+        "demand": 50
+    }
+    
+    console.print(Panel(
+        Syntax(f"junction = Junction({valid_junction_data})", "python", theme="monokai"),
+        title="[green]Junction Data[/green]",
+        border_style="green"
+    ))
+    
+    try:
+        junction = Junction(valid_junction_data)
+        console.print("✅ [bold green]Junction validation successful![/bold green]")
+        console.print(f"[dim]Note: This validator has store_passed_rules=False[/dim]")
+        console.print(f"[dim]Warnings present: {len(junction.warnings) if hasattr(junction, 'warnings') else 0}[/dim]")
+    except WNTREPANETTypeValidationErrorBundle as e:
+        console.print(f"[red]✗ Validation failed: {e}[/red]")
+    
+    console.print()
+    
+    # Demo 5: Value truncation
+    console.print("[bold]Demo 5: Value Truncation in Error Messages[/bold]", justify='center')
+    console.print("\n[bold]Creating a pipe with very long data to show truncation:[/bold]")
+    
+    long_data = {
+        "diameter": -50,
+        "length": 100,
+        "material": "PVC",
+        "description": "A" * 200,  # Very long description
+        "extra_field_1": "X" * 100,
+        "extra_field_2": "Y" * 100,
+        "extra_field_3": "Z" * 100
+    }
+    
+    console.print(f"[dim]Data size: {len(str(long_data))} characters[/dim]")
+    console.print(f"[dim]Max value length setting: 100 characters[/dim]\n")
+    
+    try:
+        pipe_long = Pipe(long_data)
+    except WNTREPANETTypeValidationErrorBundle as e:
+        console.print("[red]Validation failed (as expected)[/red]\n")
+        console.print("[bold]Notice the truncated value in error message:[/bold]")
+        for error in e.bundle[:1]:  # Show just first error
+            console.print(Panel(
+                f"[red]{error.message}[/red]\n"
+                f"[yellow]Truncated value:[/yellow]\n[dim]{error.valuetext}[/dim]",
+                title="Error with Truncation",
+                border_style="red"
+            ))
+    
+    console.print()
+    
+    # Demo 6: Descriptor protocol demonstration
+    console.print("[bold]Demo 6: Descriptor Protocol in Action[/bold]", justify='center')
+    console.print("\n[bold]Understanding the descriptor protocol:[/bold]\n")
+    
+    descriptor_table = Table(title="Descriptor Protocol Methods", box=box.ROUNDED)
+    descriptor_table.add_column("Operation", style="cyan", width=30)
+    descriptor_table.add_column("Descriptor Method Called", style="yellow", width=30)
+    descriptor_table.add_column("Effect", style="white", width=40)
+    
+    descriptor_table.add_row(
+        "pipe.data = {...}",
+        "__set__(inst, value)",
+        "Store value + trigger validation"
+    )
+    descriptor_table.add_row(
+        "value = pipe.data",
+        "__get__(inst, type)",
+        "Return stored validated data"
+    )
+    descriptor_table.add_row(
+        "Pipe.data",
+        "__get__(None, Pipe)",
+        "Return descriptor itself (class access)"
+    )
+    
+    console.print(descriptor_table)
+    console.print()
+    
+    # Demonstrate class-level vs instance-level access
+    console.print("[bold]Class-level access:[/bold]")
+    console.print(f"  Pipe.data = [cyan]{type(Pipe.data).__name__}[/cyan]")
+    console.print()
+    
+    console.print("[bold]Instance-level access:[/bold]")
+    valid_pipe = Pipe({"diameter": 100, "length": 50, "material": "PVC"})
+    console.print(f"  valid_pipe.data = [cyan]{type(valid_pipe.data).__name__}[/cyan]")
+    console.print(f"  Content: [green]{valid_pipe.data}[/green]")
+    console.print()
+    
+    # Summary
+    console.rule("[bold green]Demo Complete[/bold green]")
