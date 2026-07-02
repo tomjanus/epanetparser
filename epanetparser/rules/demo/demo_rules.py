@@ -5,7 +5,7 @@ the naming pattern '*_rules.py'. Any rules or warnings defined here using
 the @register_rule and @register_warning decorators will be automatically
 registered when the epanetparser.plugins module is imported.
 """
-from epanetparser.core import register_rule, register_warning
+from epanetparser.core.decorators import register_rule, register_warning
 
 
 @register_rule("WNTREPANETNode", "elevation_reasonable")
