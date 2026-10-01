@@ -419,13 +419,15 @@ class TestDescribedDecorator:
         assert tank_validation.description == "Ensure tank has required geometric parameters."
     
     def test_described_without_docstring(self):
-        """Test that @described handles functions without docstrings."""
+        """Test that @described falls back to the function name."""
         @described
         def no_doc_function():
             pass
-        
+
         assert hasattr(no_doc_function, 'description')
-        assert no_doc_function.description == ""
+        # A rule with no docstring is still reportable, so the name is used
+        # rather than an empty string, which would say nothing.
+        assert no_doc_function.description == "no_doc_function"
     
     def test_described_preserves_function_metadata(self):
         """Test that @described preserves function name and docstring."""

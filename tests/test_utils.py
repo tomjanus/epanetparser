@@ -1,297 +1,319 @@
-"""Tests for epanetparser.core.utils module.
+"""Tests for epanetparser.core.utils.
 
-This test module covers utility functions for EPANET component validation,
-including rule/warning method introspection and file hashing utilities.
+The module holds the pieces shared by the parser, the display layer and the
+tests: the context manager that decides whether a finding is raised or
+collected, the file digest that identifies a model, and the re-exports of the
+rule and warning introspection helpers.
+
+What is covered
+---------------
+raiseorpush
+    Raising a finding instead of collecting it, and the interaction between
+    error and warning handling.
+sha256digest
+    Correctness, determinism and chunking of the file digest.
+Re-exports
+    The rule and warning introspection helpers are importable from here, so a
+    caller need not know which module defines them.
+
+Notes
+-----
+The introspection tests build their own classes rather than using the EPANET
+component classes, because the component classes deliberately carry no
+``rule_*`` or ``warn_*`` methods. Validation rules live in rule sets now; these
+helpers describe classes, and are used by the plugins command and by
+documentation.
 """
+from collections import defaultdict
+from types import ModuleType
+
 import pytest
-import tempfile
-import os
-import logging
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from epanetparser.core.utils import (
-    get_rule_methods,
-    get_warning_methods,
-    sha256digest,
-    raiseorpush,
-)
-from epanetparser.core.epanettypes import WNTREPANETNode, WNTREPANETLink
+
+from epanetparser.core.discovery import MethodInfo
 from epanetparser.core.epanettypes.exceptions import (
     WNTREPANETTypeValidationError,
-    WNTREPANETTypeValidationErrorBundle
+    WNTREPANETTypeValidationErrorBundle,
 )
-from collections import defaultdict
-from rich.logging import RichHandler
+from epanetparser.core.utils import (
+    discover_classes,
+    discover_methods_in_class,
+    get_rule_methods,
+    get_warning_methods,
+    raiseorpush,
+    sha256digest,
+)
 
 
-class TestGetRuleMethods:
-    """Tests for get_rule_methods() function."""
-    
-    def test_get_rule_methods_returns_dict(self):
-        """Test that get_rule_methods returns a dictionary."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        rules = get_rule_methods(node)
-        assert isinstance(rules, dict)
-    
-    def test_get_rule_methods_finds_rules(self):
-        """Test that get_rule_methods finds methods starting with 'rule_'."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        rules = get_rule_methods(node)
-        
-        # Should find at least some rule methods
-        assert len(rules) > 0
-        
-        # All keys should start with 'rule_'
-        for rule_name in rules.keys():
-            assert rule_name.startswith("rule_"), f"Method {rule_name} doesn't start with 'rule_'"
-    
-    def test_get_rule_methods_returns_callables(self):
-        """Test that get_rule_methods returns callable methods."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        rules = get_rule_methods(node)
-        
-        # All values should be callable
-        for rule_name, rule_func in rules.items():
-            assert callable(rule_func), f"Rule {rule_name} is not callable"
-    
-    def test_get_rule_methods_link_component(self):
-        """Test get_rule_methods with link components."""
-        link = WNTREPANETLink({"name": "P1", "link_type": "Pipe"})
-        rules = get_rule_methods(link)
-        
-        assert isinstance(rules, dict)
-        assert len(rules) > 0
-        assert all(name.startswith("rule_") for name in rules.keys())
-    
-    def test_rule_methods_are_bound(self):
-        """Test that returned rule methods are bound to the instance."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        rules = get_rule_methods(node)
-        
-        # Get any rule method
-        if rules:
-            rule_name, rule_func = next(iter(rules.items()))
-            # Should be a bound method with __self__ pointing to the node
-            assert hasattr(rule_func, '__self__')
-            assert rule_func.__self__ is node
+@pytest.fixture
+def rules_class():
+    """A class carrying one rule and one warning, defined in a test module."""
+
+    class Pipe:
+        """A component with a rule and a warning."""
+
+        def __init__(self, data=None):
+            self.data = data or {}
+
+        def rule_has_length(self):
+            """Length must be present."""
+            assert "length" in self.data, "Length is required"
+
+        def warn_short_pipe(self):
+            """Warn about a very short pipe."""
+            assert self.data.get("length", 0) >= 10, "Pipe is very short"
+
+    Pipe.__module__ = "tests.test_utils"
+    return Pipe
 
 
-class TestGetWarningMethods:
-    """Tests for get_warning_methods() function."""
-    
-    def test_get_warning_methods_returns_dict(self):
-        """Test that get_warning_methods returns a dictionary."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        warnings = get_warning_methods(node)
-        assert isinstance(warnings, dict)
-    
-    def test_get_warning_methods_finds_warnings(self):
-        """Test that get_warning_methods finds methods starting with 'warn_'."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        warnings = get_warning_methods(node)
-        
-        # All keys should start with 'warn_' (if any exist)
-        for warn_name in warnings.keys():
-            assert warn_name.startswith("warn_"), f"Method {warn_name} doesn't start with 'warn_'"
-    
-    def test_get_warning_methods_returns_callables(self):
-        """Test that get_warning_methods returns callable methods."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        warnings = get_warning_methods(node)
-        
-        # All values should be callable (if any exist)
-        for warn_name, warn_func in warnings.items():
-            assert callable(warn_func), f"Warning {warn_name} is not callable"
-    
-    def test_get_warning_methods_link_component(self):
-        """Test get_warning_methods with link components."""
-        link = WNTREPANETLink({"name": "P1", "link_type": "Pipe"})
-        warnings = get_warning_methods(link)
-        
-        assert isinstance(warnings, dict)
-        # May or may not have warnings, but should return valid dict
-        assert all(name.startswith("warn_") for name in warnings.keys())
-    
-    def test_warning_methods_are_bound(self):
-        """Test that returned warning methods are bound to the instance."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        warnings = get_warning_methods(node)
-        
-        # If there are any warning methods, check they're bound
-        if warnings:
-            warn_name, warn_func = next(iter(warnings.items()))
-            assert hasattr(warn_func, '__self__')
-            assert warn_func.__self__ is node
+def bundle(count: int = 1) -> WNTREPANETTypeValidationErrorBundle:
+    """Build a validation error bundle for testing.
+
+    Parameters
+    ----------
+    count : int
+        Number of errors in the bundle.
+
+    Returns:
+        WNTREPANETTypeValidationErrorBundle: The bundle.
+    """
+    return WNTREPANETTypeValidationErrorBundle(
+        "failures",
+        [
+            WNTREPANETTypeValidationError("Pipe", f"rule_{index}", "boom", "{}")
+            for index in range(count)
+        ],
+    )
 
 
-class TestSha256Digest:
-    """Tests for sha256digest() function."""
-    
-    def test_sha256digest_returns_string(self):
-        """Test that sha256digest returns a string."""
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
-            f.write("test content")
-            temp_path = f.name
-        
-        try:
-            digest = sha256digest(temp_path)
-            assert isinstance(digest, str)
-        finally:
-            os.unlink(temp_path)
-    
-    def test_sha256digest_correct_length(self):
-        """Test that SHA256 digest has correct length (64 hex characters)."""
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
-            f.write("test content")
-            temp_path = f.name
-        
-        try:
-            digest = sha256digest(temp_path)
-            assert len(digest) == 64  # SHA256 = 256 bits = 64 hex chars
-        finally:
-            os.unlink(temp_path)
-    
-    def test_sha256digest_deterministic(self):
-        """Test that same content produces same hash."""
-        content = "deterministic test content"
-        
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
-            f.write(content)
-            temp_path = f.name
-        
-        try:
-            digest1 = sha256digest(temp_path)
-            digest2 = sha256digest(temp_path)
-            assert digest1 == digest2
-        finally:
-            os.unlink(temp_path)
-    
-    def test_sha256digest_different_content(self):
-        """Test that different content produces different hashes."""
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f1:
-            f1.write("content one")
-            path1 = f1.name
-        
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f2:
-            f2.write("content two")
-            path2 = f2.name
-        
-        try:
-            digest1 = sha256digest(path1)
-            digest2 = sha256digest(path2)
-            assert digest1 != digest2
-        finally:
-            os.unlink(path1)
-            os.unlink(path2)
-    
-    def test_sha256digest_empty_file(self):
-        """Test sha256digest with empty file."""
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
-            temp_path = f.name
-        
-        try:
-            digest = sha256digest(temp_path)
-            # Empty file has a known SHA256 hash
-            expected = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-            assert digest == expected
-        finally:
-            os.unlink(temp_path)
-    
-    def test_sha256digest_large_file(self):
-        """Test sha256digest with a larger file (tests chunking)."""
-        # Create a file larger than the buffer size (64KB)
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
-            # Write 100KB of data
-            f.write("x" * (100 * 1024))
-            temp_path = f.name
-        
-        try:
-            digest = sha256digest(temp_path)
-            assert len(digest) == 64
-            assert isinstance(digest, str)
-        finally:
-            os.unlink(temp_path)
+def destination():
+    """Build a destination object for collected findings.
+
+    Returns:
+        An object with ``errors`` and ``warnings`` mappings.
+    """
+    return type(
+        "Destination",
+        (),
+        {"errors": defaultdict(list), "warnings": defaultdict(list)},
+    )()
 
 
 class TestRaiseOrPush:
-    """Tests for raiseorpush context manager."""
-    
-    def test_raiseorpush_initialization(self):
-        """Test basic initialization of raiseorpush."""
-        dest = type('Dest', (), {
-            'errors': defaultdict(list),
-            'warnings': defaultdict(list)
-        })()
-        
-        ctx = raiseorpush('TestComponent', True, True, dest)
-        assert ctx.component == 'TestComponent'
-        assert ctx.raise_error == True
-        assert ctx.raise_warning == True
-        assert ctx.dest is dest
-    
-    def test_raiseorpush_context_manager(self):
-        """Test raiseorpush as context manager."""
-        dest = type('Dest', (), {
-            'errors': defaultdict(list),
-            'warnings': defaultdict(list)
-        })()
-        
-        with raiseorpush('TestComponent', False, False, dest) as ctx:
-            assert ctx is not None
-            assert ctx.component == 'TestComponent'
-    
-    def test_raiseorpush_ignore_warnings(self):
-        """Test that ignore_warnings flag works."""
-        dest = type('Dest', (), {
-            'errors': defaultdict(list),
-            'warnings': defaultdict(list)
-        })()
-        
-        ctx = raiseorpush('TestComponent', False, True, dest, ignore_warnings=True)
-        assert ctx.raise_warning == False
-        assert ctx.ignore_warnings == True
+    """The context manager that raises or collects a finding."""
+
+    def test_records_how_it_was_configured(self):
+        """The manager keeps the settings it was given."""
+        dest = destination()
+        manager = raiseorpush("Node", True, True, dest)
+        assert manager.component == "Node"
+        assert manager.raise_error is True
+        assert manager.raise_warning is True
+        assert manager.dest is dest
+
+    def test_enter_returns_the_manager(self):
+        """Binding the context yields the manager itself."""
+        manager = raiseorpush("Node", False, False, destination())
+        with manager as entered:
+            assert entered is manager
+
+    def test_collects_a_bundle_when_not_raising(self):
+        """A bundle is pushed onto the destination, keyed by component."""
+        dest = destination()
+        with raiseorpush("Node", raise_error=False, raise_warning=False, dest=dest):
+            raise bundle(2)
+        assert len(dest.errors["Node"]) == 2
+
+    def test_suppresses_the_exception_when_collecting(self):
+        """Collecting means the caller carries on."""
+        dest = destination()
+        with raiseorpush("Node", raise_error=False, raise_warning=False, dest=dest):
+            raise bundle()
+        assert dest.errors
+
+    def test_raises_the_first_error_when_asked_to(self):
+        """Raising surfaces one error rather than the whole bundle."""
+        with pytest.raises(WNTREPANETTypeValidationError):
+            with raiseorpush("Node", raise_error=True, raise_warning=False,
+                             dest=destination()):
+                raise bundle(3)
+
+    def test_raising_on_warnings_implies_raising_on_errors(self):
+        """A model that is being rejected anyway should not also be collected."""
+        with pytest.raises(WNTREPANETTypeValidationError):
+            with raiseorpush("Node", raise_error=False, raise_warning=True,
+                             dest=destination()):
+                raise bundle()
+
+    def test_ignoring_warnings_overrides_raising_on_them(self):
+        """ignore_warnings wins, so a caller can collect rather than raise."""
+        manager = raiseorpush(
+            "Node", raise_error=False, raise_warning=True, dest=destination(),
+            ignore_warnings=True,
+        )
+        assert manager.raise_warning is False
+        assert manager.ignore_warnings is True
+
+    def test_an_unrelated_exception_propagates(self):
+        """The manager only handles validation findings, not every exception."""
+        with pytest.raises(ZeroDivisionError):
+            with raiseorpush("Node", raise_error=False, raise_warning=False,
+                             dest=destination()):
+                1 / 0
+
+    def test_a_clean_block_collects_nothing(self):
+        """Nothing raised means nothing collected."""
+        dest = destination()
+        with raiseorpush("Node", raise_error=False, raise_warning=False, dest=dest):
+            pass
+        assert dest.errors == {}
+        assert dest.warnings == {}
+
+    def test_the_error_set_widens_when_not_raising(self):
+        """A single error is only caught when it is going to be collected."""
+        raising = raiseorpush("Node", True, False, destination())
+        collecting = raiseorpush("Node", False, False, destination())
+        assert raising.error_set == (WNTREPANETTypeValidationErrorBundle,)
+        assert collecting.error_set == (
+            WNTREPANETTypeValidationError,
+            WNTREPANETTypeValidationErrorBundle,
+        )
 
 
-class TestRuleWarningMethodsIntegration:
-    """Integration tests for rule and warning methods."""
-    
-    def test_rules_and_warnings_are_separate(self):
-        """Test that rules and warnings are properly separated."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        
-        rules = get_rule_methods(node)
-        warnings = get_warning_methods(node)
-        
-        # Rule names and warning names should not overlap
-        rule_names = set(rules.keys())
-        warning_names = set(warnings.keys())
-        
-        assert rule_names.isdisjoint(warning_names), \
-            "Rules and warnings should have different names"
-    
-    def test_execute_valid_rule(self):
-        """Test executing a valid rule that should pass."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        rules = get_rule_methods(node)
-        
-        # The rule_node_has_name should pass for a node with a name
-        if 'rule_node_has_name' in rules:
-            # Should not raise an exception
-            rules['rule_node_has_name']()
-    
-    def test_different_components_different_rules(self):
-        """Test that different component types have different rule sets."""
-        node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
-        link = WNTREPANETLink({"name": "P1", "link_type": "Pipe"})
-        
-        node_rules = set(get_rule_methods(node).keys())
-        link_rules = set(get_rule_methods(link).keys())
-        
-        # There should be some differences in rule sets
-        # (though some base rules might be common)
-        assert node_rules != link_rules
+class TestSha256Digest:
+    """The file digest included in every report."""
+
+    def test_returns_a_hex_digest(self, tmp_path):
+        """A digest is a hexadecimal string."""
+        path = tmp_path / "model.inp"
+        path.write_text("test content", encoding="utf-8")
+        digest = sha256digest(str(path))
+        assert isinstance(digest, str)
+        assert len(digest) == 64
+        int(digest, 16)  # must be valid hexadecimal
+
+    def test_is_deterministic(self, tmp_path):
+        """The same bytes always give the same digest, so a report is traceable."""
+        path = tmp_path / "model.inp"
+        path.write_text("deterministic test content", encoding="utf-8")
+        assert sha256digest(str(path)) == sha256digest(str(path))
+
+    def test_differs_between_files(self, tmp_path):
+        """Different content gives a different digest."""
+        left = tmp_path / "a.inp"
+        right = tmp_path / "b.inp"
+        left.write_text("content one", encoding="utf-8")
+        right.write_text("content two", encoding="utf-8")
+        assert sha256digest(str(left)) != sha256digest(str(right))
+
+    def test_matches_the_known_empty_file_digest(self, tmp_path):
+        """The digest of empty content is the well-known SHA-256 constant."""
+        path = tmp_path / "empty.inp"
+        path.write_bytes(b"")
+        assert sha256digest(str(path)) == (
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
+
+    def test_handles_a_file_larger_than_one_chunk(self, tmp_path):
+        """A file larger than the 64 KiB read buffer is hashed correctly."""
+        path = tmp_path / "big.inp"
+        payload = "x" * (256 * 1024)
+        path.write_text(payload, encoding="utf-8")
+        assert len(sha256digest(str(path))) == 64
+
+    def test_raises_for_a_missing_file(self, tmp_path):
+        """A file that is not there is an error, not an empty digest."""
+        with pytest.raises(OSError):
+            sha256digest(str(tmp_path / "absent.inp"))
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestIntrospectionReexports:
+    """The introspection helpers are importable from utils."""
 
+    def test_helpers_are_the_same_objects(self):
+        """Re-exporting does not wrap or copy, so identity is preserved."""
+        import epanetparser.core.discovery as discovery
+
+        assert get_rule_methods is discovery.get_rule_methods
+        assert get_warning_methods is discovery.get_warning_methods
+        assert discover_classes is discovery.discover_classes
+        assert discover_methods_in_class is discovery.discover_methods_in_class
+
+    def test_get_rule_methods_returns_a_mapping(self, rules_class):
+        """Rules are returned keyed by name."""
+        rules = get_rule_methods(rules_class)
+        assert isinstance(rules, dict)
+        assert "rule_has_length" in rules
+        assert all(name.startswith("rule") for name in rules)
+
+    def test_get_warning_methods_returns_a_mapping(self, rules_class):
+        """Warnings are returned separately from rules."""
+        warnings = get_warning_methods(rules_class)
+        assert "warn_short_pipe" in warnings
+        assert all(name.startswith("warn") for name in warnings)
+
+    def test_rules_and_warnings_are_disjoint(self, rules_class):
+        """A name is either a rule or a warning, never both."""
+        rules = set(get_rule_methods(rules_class))
+        warnings = set(get_warning_methods(rules_class))
+        assert rules.isdisjoint(warnings)
+
+    def test_an_instance_yields_bound_methods(self, rules_class):
+        """Passing an instance binds the methods to it, so they can be called."""
+        pipe = rules_class({"length": 5})
+        rules = get_rule_methods(pipe)
+        assert rules["rule_has_length"].method.__self__ is pipe
+
+    def test_a_class_yields_unbound_methods(self, rules_class):
+        """Passing a class leaves the methods unbound, bound by the caller."""
+        rules = get_rule_methods(rules_class)
+        assert not hasattr(rules["rule_has_length"].method, "__self__")
+
+    def test_a_discovered_method_carries_its_description(self, rules_class):
+        """Descriptions come from the docstring, for reporting and documentation."""
+        info = get_rule_methods(rules_class)["rule_has_length"]
+        assert isinstance(info, MethodInfo)
+        assert info.description == "Length must be present."
+        assert info.to_dict()["description"] == "Length must be present."
+
+    def test_a_failing_rule_raises_when_executed(self, rules_class):
+        """A discovered rule is the real callable, not a description of one."""
+        pipe = rules_class({})
+        with pytest.raises(AssertionError):
+            get_rule_methods(pipe)["rule_has_length"].method()
+
+
+class TestComponentClassesCarryNoRules:
+    """The model has no rules, which is what makes rulesets composable."""
+
+    @pytest.mark.parametrize(
+        "module_name,class_name",
+        [
+            ("control", "WNTREPANETControl"),
+            ("curve", "WNTREPANETCurve"),
+            ("link", "WNTREPANETLink"),
+            ("network_info", "WNTREPANETNetworkInfo"),
+            ("node", "WNTREPANETNode"),
+            ("options", "WNTREPANETOptions"),
+            ("pattern", "WNTREPANETPattern"),
+            ("source", "WNTREPANETSource"),
+        ],
+    )
+    def test_no_component_declares_rule_or_warning_methods(self, module_name, class_name):
+        """Rules are found by rule set metadata, not by method-name convention."""
+        module = ModuleType(f"epanetparser.core.epanettypes.{module_name}")
+        import importlib
+
+        module = importlib.import_module(
+            f"epanetparser.core.epanettypes.{module_name}"
+        )
+        cls = getattr(module, class_name)
+        assert get_rule_methods(cls) == {}
+        assert get_warning_methods(cls) == {}
+
+    def test_discover_classes_finds_the_component_classes(self):
+        """The introspection helper still describes the model accurately."""
+        import epanetparser.core.epanettypes.node as node_module
+
+        classes = discover_classes(node_module)
+        assert [cls.__name__ for cls in classes] == ["WNTREPANETNode"]
