@@ -1,14 +1,23 @@
-.. PywrParser documentation master file, created by
-   sphinx-quickstart on Thu May  5 23:24:38 2022.
+epanetparser documentation master file.
 
-The PywrParser Documentation
-============================
+The epanetparser Documentation
+==============================
 
-`PywrParser` is a toolkit for parsing and manipulating `Pywr <https://github.com/pywr>`_ networks.
-The toolkit consists of a command-line utility and a library, which together allow `PywrParser` to be
-used directly and as a component of other projects.
+`epanetparser` is a toolkit for parsing, validating and converting
+`EPANET <https://github.com/USEPA/EPANET2.2>`_ water distribution network
+models. It works with both EPANET INP (text) format and
+`WNTR <https://usepa.github.io/WNTR/>`_ JSON format.
 
-The `PywrParser` source code is hosted `on GitHub <https://github.com/pmslavin/pywrparser>`_.
+The toolkit consists of a command-line utility and a library, which together
+allow `epanetparser` to be used directly and as a component of other projects.
+
+Parsing and validation are separate steps. Parsing builds a model and reports
+only structural problems. Validation runs afterwards against a chosen rule set
+and returns a structured report, so a model can be a valid EPANET model and
+still be rejected by an application-specific rule set.
+
+The `epanetparser` source code is hosted
+`on GitHub <https://github.com/tomjanus/epanetparser>`_.
 
 .. toctree::
    :maxdepth: 2
@@ -24,7 +33,7 @@ The `PywrParser` source code is hosted `on GitHub <https://github.com/pmslavin/p
 
 .. toctree::
    :maxdepth: 2
-   :caption: The pywrparser library
+   :caption: The epanetparser library
 
    library
 

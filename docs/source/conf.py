@@ -17,18 +17,31 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'PywrParser'
-copyright = '2022, Paul Slavin'
-author = 'Paul Slavin'
+project = 'epanetparser'
+author = 'Paul Slavin, Tomasz Janus'
+copyright = '2022-2026, Paul Slavin and Tomasz Janus'
 
-# The full version, including alpha/beta/rc tags
-release = '0.2.0'
+# Read the version from the installed distribution rather than hardcoding it.
+# `import epanetparser` is deliberately avoided: importing the package runs
+# initialize(), which writes a user configuration file as a side effect of
+# building the docs.
+from importlib.metadata import PackageNotFoundError, version as _dist_version
+
+try:
+    # The full version, including alpha/beta/rc tags
+    release = _dist_version('epanetparser')
+except PackageNotFoundError:  # docs built from an uninstalled source tree
+    release = '0.0.0'
+
+# The short X.Y version
+version = '.'.join(release.split('.')[:2])
 
 
 # -- General configuration ---------------------------------------------------
-# Extensions
-import sphinx_rtd_theme
-
+# Extensions.
+# The theme is activated by name in `extensions` and `html_theme` below, so it
+# is not imported here; a bare import would only add a way for conf.py to fail.
+#
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
@@ -62,7 +75,3 @@ html_theme = 'sphinx_rtd_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 html_css_files = ['theme_override.css']
-
-# -- Additions ---------------------------------------------------------------
-import pywrparser
-version = pywrparser.__version__

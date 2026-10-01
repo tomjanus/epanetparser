@@ -27,22 +27,26 @@ rich-argparse = "^1.5.2"
 gdown = "^6.0.0"
 wntr = "^1.4.0"
 platformdirs = "^4.9.2"
+# Parses the bundled default_config.yaml on import; not optional.
+pyyaml = "^6.0"
+# Imported directly by epanetparser.core.download.
+requests = "^2.32"
 
 [tool.poetry.scripts]
 epanetparser = "epanetparser.core.parse:run"
 epanetparser-plugins = "epanetparser.core.plugins_cli:main"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.2"
-pudb = "^2022.1.1"
-coverage = "^6.3.2"
-pyflakes = "^2.4.0"
-mypy = "^0.942"
-flake8 = "^4.0.1"
-pytest-cov = "^3.0.0"
-nox = "^2022.1.7"
-sphinx = "^5"
-sphinx-rtd-theme = "^1.1.1"
+pytest = "^8.4"
+pudb = "^2025.1"
+coverage = "^7.6"
+pyflakes = "^3.4"
+mypy = "^1.13"
+flake8 = "^7.1"
+pytest-cov = "^5.0"
+nox = "^2024.4.22"
+sphinx = "^8.1"
+sphinx-rtd-theme = "^3.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

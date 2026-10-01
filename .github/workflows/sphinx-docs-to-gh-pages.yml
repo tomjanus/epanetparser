@@ -6,24 +6,32 @@ on:
     types: [completed]
     branches: [master]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Keep at most one deployment queued; cancel superseded runs.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
 
   build:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    env:
-      LAST_BUILD_FILE: last-build.html
 
     steps:
-      - name: Checkout pywrparser master
+      - name: Checkout epanetparser master
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
-      - name: Set up Python 3.9
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: "3.10"
 
       - name: Install poetry
         uses: snok/install-poetry@v1.3.1
@@ -45,21 +53,13 @@ jobs:
       - name: Build Sphinx html docs
         run: poetry run sphinx-build -a docs/source docs/build/html
 
-      - name: Checkout pywrparser gh-pages
-        run: git clone -b gh-pages --single-branch https://token:${{ secrets.GITHUB_TOKEN }}@github.com/pmslavin/pywrparser.git gh-pages
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
-      - name: Copy doc changes
-        run: |
-             cp -r docs/build/html/* gh-pages
-             touch gh-pages/.nojekyll
-             echo "<p style='color:grey;font-size:8px'>Docs built from ${GITHUB_REF} commit ${GITHUB_SHA} at `git log -1 --pretty=%cd`</p>" > gh-pages/$LAST_BUILD_FILE
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build/html
 
-      - name: Commit doc changes
-        run: |
-             cd gh-pages
-             git config --local user.email ${{ secrets.PAGES_EMAIL }}
-             git config --local user.name ${{ secrets.PAGES_USER }}
-             git add $LAST_BUILD_FILE
-             git commit -a -m "Sphinx workflow adds doc changes"
-             git push origin gh-pages
-
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

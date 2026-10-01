@@ -11,162 +11,32 @@
 EPANET Parser -- A toolkit for validating EPANET models
 =======================================================
 
-**🚧 Active Development Notice**
-
-**EPANETParser** is currently under active development. While the core functionality 
-is operational, some features are still being refined and documentation is being 
-updated. The tool is usable for:
-
-* Validating EPANET network models in INP or WNTR JSON formats
-* Converting between INP and JSON formats
-* Applying custom validation rulesets
-
-Please report any issues or suggestions at https://github.com/tomjanus/epanetparser/issues
-
-Expected stable release: Coming soon!
-
-----
-
-**EPANETParser** is a fork of **PywrParser** -- *"An experimental parser 
-for Pywr json network definitions"* developed by Dr. Paul Slavin from the University 
+**EPANETParser** is a fork of **PywrParser** -- *"An experimental parser
+for Pywr json network definitions"* developed by Dr. Paul Slavin from the University
 of Manchester, UK. While `pywrparser` enables validation and manipulation of **Pywr** networks,
-`epanetparser` is a modification of `pywrparser` that enables validation of **EPANET** 
-network models. The source code for `pywrparser` is available at 
-https://github.com/pmslavin/pywrparser whereas its documentation can be found at 
-https://pmslavin.github.io/pywrparser/. 
+`epanetparser` is a modification of `pywrparser` that enables validation of **EPANET**
+network models. The source code for `pywrparser` is available at
+https://github.com/pmslavin/pywrparser whereas its documentation can be found at
+https://pmslavin.github.io/pywrparser/.
 
-The source code for `epanetparser` is available at https://github.com/tomjanus/epanetparser. 
-The documentation is located at https://tomjanus.github.io/epanetparser/. 
+The source code for `epanetparser` is available at https://github.com/tomjanus/epanetparser.
+The documentation is located at https://tomjanus.github.io/epanetparser/.
 
-What does EPANETParser take from PywrParser and what is new?
-------------------------------------------------------------
+`epanetparser` works on `JSON` representations of **EPANET** network models that use the
+format/schema defined in `USEPA WNTR - The Water Network Tool for Resilience <https://github.com/USEPA/WNTR>`_
+-- a Python package designed to simulate and analyze resilience of water distribution
+networks. **WNTR** is a high-level Python wrapper that uses **EPANET** as a simulation engine
+and extends it with additional functionalities. For more information on **WNTR**, please
+refer to its documentation at http://wntr.readthedocs.io
 
-The structure of the package remains largely the same as **PywrParser**, with modifications
-specific to **EPANET** network models and auto-discovery and registration of core rules and custom 
-rulesets. The core parsing and validation framework has been adapted to work with EPANET-specific
-components and their associated validation rules.
-
-The errors and warning display mechanisms are the same as in **PywrParser** but due to adopting a
-new ruleset discovery and registration mechanism, the rules are now displayed in a more structured
-and organized manner. The rules are now grouped by the component type they apply to, making it
-easier to understand which rules are relevant to which components of the network model.
-The rule descriptions are separate from ruleset descriptions and follow a hierarchy of how they
-are applied in practice. The rules are applied first to the network components followed by ruleset-specific
-rules and warnings. Effectively, rulesets are treated as additional rules that are applied after 
-the core rules have been validated. 
-This allows validating networks for user-specific purposes, where additional restrictions need to be 
-imposed on the network components and the network as a whole, whilst core rules enforce network constraints
-that are universal and applicable to all networks.
-
-EPANETParser Structure
-----------------------
-
-**EPANETParser** is built upon the following core components:
-
-* `WNTRJSONParser`: The main parser class that orchestrates the parsing and validation of EPANET network models in WNTR JSON format.
-* `WNTREPANETType`: The base class for all EPANET network components, such as nodes, links, patterns, controls, etc. It provides common functionality for validation and rule management.
-* `WNTREPANETTypeValidator`: A descriptor class that handles the validation of individual attributes of EPANET network components. It allows for the definition of validation rules and their application to specific attributes.
-* `WNTREPANETTypeValidationErrorBundle`: A class that collects and manages validation errors and warnings encountered during the parsing process. It provides a structured way to report issues found during validation.
-
-The UML diagram describing the core EPANETParser classes and their relationships can be found in the `docs/epanetparser_class_hierarchy.puml` file. 
-This diagram provides a visual representation of the class hierarchy and the interactions between the different components of the parser.
-
-The core logic behind the parsing and validation process is implemented in the `epanetparser/core/validation.py` file. 
-This file contains the main validation logic, including the application of rules and the collection of errors and warnings.
-
-The validation mechanism relies on and leverages the descriptor protocol, which allows for the definition 
-of validation rules as methods on the `WNTREPANETType` classes. The descriptor implemented in `WNTREPANETTypeValidator` 
-is used for the discovery of rule and warning methods and their application to the attributes of the EPANET network components
-upon assigning each network component to the `WNTRJSONParser`. 
-The validation process is initiated by calling the `validate()` method on the `WNTRJSONParser` instance, 
-which triggers the validation of all network components and their associated rules.
-
-Validation Architecture
-~~~~~~~~~~~~~~~~~~~~~~~
-
-Each base **component** and the whole **network** (container of components) - all of which are defined in `epanetparser.core.epanettypes` - can be associated with validation rules and warnings which are defined in three separate places:
-
-* base class definitions
-* core rule definitions managed in rule registry
-* rulesets autodiscovered by the rulesets module
-
-During validation the following steps are carried out in this order:
-
-1. Collect all warnings and rules for all network components, i.e. from base class definitions, rule registry, and rulesets.
-2. Check for any conflicts and repeated rule definitions. If there exist any conflicts, preserve only those rules and warnings with the highest priority. Priority is set as follows (in order of decreasing priority): base class definitions → core rule definitions → rulesets. I.e., a rule from a ruleset cannot overwrite a core rule.
-3. Execute instance rules (from base class)
-4. Execute plugin rules (from registry)
-5. Execute ruleset rules (from active ruleset subclass)
-
-Motivation
-----------
-
-The water community keeps building various tools either to extend **EPANET** capabilities
-or as new tools that are made to work with **EPANET** or that use **EPANET** for simulating
-water distribution networks (WDNs). Some examples include:
-
-* `MAGNets <https://github.com/meghnathomas/MAGNets>`_ -- *A Python package to aggregate and reduce water distribution network models*
-* `MILPNet <https://github.com/meghnathomas/MILPNet>`_ -- *Mixed-Integer Linear Programming framework for water distribution system optimization*
-
-These tools may impose certain restrictions on the networks, e.g., a mixed-integer linear
-optimizer for pump scheduling might impose certain restrictions on the network such as
-absence of certain types of pumps or valves, etc., that are not supported by the linearization
-scheme. In such cases, authors of a package can create a set of rules against which every
-new network used in the tool can be validated.
-
-Quick Description
------------------
-
-`epanetparser` works on `JSON` representations of the **EPANET** network models that use
-the format/schema defined in `USEPA WNTR - The Water Network Tool for Resilience <https://github.com/USEPA/WNTR>`_ -- a Python package designed to simulate and analyze resilience of water distribution networks. **WNTR** is a high-level Python wrapper that uses **EPANET** as a simulation engine and extends it with additional functionalities. For more information on **WNTR**, please refer to its documentation at http://wntr.readthedocs.io
-
-As in **PywrParser**, each category of the **EPANET** model building blocks such 
-as *nodes*, *links*, *patterns*, *controls*, etc., are parsed and validated against 
-pre-defined sets of rules. Depending on the configuration, the parser raises an error 
-upon violating one of the rules or continues and collects all rule violations before issuing 
-a final report. In addition to rules, warnings are issued on the **passing** network components, 
-i.e., on the network components that do not violate any rules but also don't meet some of the 
-non-essential criteria. The purpose of warnings is to inform the user about potential issues that 
-may arise in the future, such as future compatibility issues, or to provide additional information 
-and explanation about the behaviour of certain components that might be difficult to pick up from 
-source code and documentation. 
-
-Rules, i.e., `rule_` and `warn_` validation methods for each component can be added or updated 
-using `rulesets`. A ruleset is a set of rules that is specific to a certain model application. 
-For example, in case of a hypothetical test ruleset called `test1.0`, the use of check valves is 
-prohibited. This restriction could be applied within a package that does not allow check valves, 
-e.g., due to certain limitations of the computational engine.
-
-Plugins vs Rulesets
--------------------
-
-**When to use Plugins:**
-
-* Universal validation that applies to ALL EPANET models
-* Shared standards across projects
-* External package providing validation
-
-**When to use Rulesets:**
-
-* Domain-specific constraints (pump scheduling, leakage detection method, etc. that do not work on all generic networks)
-* Switchable validation contexts
-* Temporary/experimental rules
-
-Applications
-------------
-
-`epanetparser` can be used as a custom network model validator that is specific to a tool
-that is being developed which imposes restrictions on network models it can work with, e.g.,
-topological restrictions, types of junctions, presence/absence of controls and rules, etc.
-
-Additionally, `epanetparser` can be developed into a generic parser for any EPANET network model
-that defines the universal requirements that any EPANET network needs to fulfill in order to run
-without failures and/or output correct results.
+Both WNTR `JSON` and native **EPANET** `INP` files are accepted. An `INP` file is converted
+to the JSON representation with WNTR before being parsed.
 
 Installation
 ------------
 
-EPANETParser can be installed with either `Poetry <https://python-poetry.org>`_ or ``pip``:
+Requires **Python 3.10 or later**. EPANETParser can be installed with either
+`Poetry <https://python-poetry.org>`_ or ``pip``:
 
 **Using Poetry:**
 
@@ -184,162 +54,633 @@ EPANETParser can be installed with either `Poetry <https://python-poetry.org>`_ 
     ❯ cd epanetparser
     ❯ pip install .
 
-CLI Usage
----------
+Quick start
+-----------
 
-The ``epanetparser`` usage can be displayed with:
-
-.. code-block:: console
-
-    ❯ epanetparser -h
-    usage: epanetparser [-f <filename> | -l] [OPTIONS]
-
-    Validator of EPANET models in WNTR JSON format prior to conversion to a mixed integer linear programme.
-
-    options:
-    -h, --help            show this help message and exit
-    -f <filename>, --filename <filename>
-                            File containing a EPANET model in WNTR JSON format
-    -l, --list-rulesets   Display a list of all available rulesets
-
-    validation options:
-    --use-ruleset <ruleset>
-                            Apply the specified ruleset during parsing
-    --raise-on-warning    Raise failures of parsing warnings as exceptions. Implies `--raise-on-error`
-    --raise-on-error      Raise failures of parsing rules as exceptions
-    --ignore-warnings     Do not display parsing report if only warnings are present
-
-    display options:
-    --json-output         Display parsing report in json format for machine reading
-    --pretty-output       Display parsing report on the console with colour. This is the default output format
-    --no-emoji            Omit emoji in console parsing reports
-    --no-colour           Omit colour output in console parsing reports. Implies `--no-emoji`
-    --terse-report        Display only a terse report for valid networks
-
-    general options:
-    --no-digest           Omit sha256 digest in JSON and dict parsing reports
-    --version             Display the version of epanetparser
-
-    The tool is an adaptation of the toolkit for parsing and validating Pywr models written by Paul Slavin, https://github.com/pmslavin/pywrparser,
-    https://pmslavin.github.io/pywrparser
-
-
-Usage Examples
---------------
-
-Invalid network with ``strict`` **milops10** ruleset (failed run)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Validate a model. Five example networks ship with the package, so there is
+something to try this on immediately:
 
 .. code-block:: console
 
-    ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp --use-ruleset test10
-
-    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-    │ water distribution networks.`                                                                                                                              │
-    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-                             ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
-                             │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 6 errors, 0 warnings │                          
-                             ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
-
-    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
-
-      🔴  MILOPS_1_0_Options 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                              
-                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-                "specific_gravity": 1...[+1647 chars]                                                                                                             
-      🔴  MILOPS_1_0_Options 'rule_simulation_time_horizon' -> Simulation time horizon 936400.0 seconds not equal to schedule time horizon 86400 seconds          
-                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-                "specific_gravity": 1...[+1647 chars]                                                                                                             
-
-    ─────────────────────────────────────────────────────────────────────────── Links ────────────────────────────────────────────────────────────────────────────
-
-      🔴  MILOPS_1_0_Links 'rule_check_valves' -> Check valves not supported                                                                                      
-                {"name": "112", "link_type": "Pipe", "start_node_name": "12", "end_node_name": "22", "bulk_coeff": null, "check_valve": true,                     
-                "diameter": 0.30479999999999996, "initial_setting": null, "initial_status": "Open", "length": 1609.344, "minor_loss": 0.0,                        
-                "roughness": 100.0, "tag": null, "vertices": [], "wall_coeff": null}                                                                              
-      🔴  MILOPS_1_0_Links 'rule_no_valves_allowed' -> Valve links not supported                                                                                  
-                {"name": "111", "link_type": "Valve", "start_node_name": "11", "end_node_name": "21", "valve_type": "PRV", "diameter":                            
-                0.19999999999919998, "initial_setting": 39.99999999974152, "initial_status": "Active", "minor_loss": 0.0, "tag": null, "vertices": []}            
-
-    ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
-
-      🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
-                {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
-      🔴  MILOPS_1_0_Control 'rule_no_controls_allowed' -> Controls not supported                                                                                 
-                {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
-
-    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-Invalid network without ``strict`` ruleset (failed run)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    ❯ epanetparser -f ../../../models/epanetparser_test_models/invalid_network.inp
-
-    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-    │ water distribution networks.`                                                                                                                              │
-    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-                             ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮                          
-                             │ Parser results for '../../../models/epanetparser_test_models/invalid_network.inp': 3 errors, 0 warnings │                          
-                             ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯                          
-
-    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
-
-      🔴  WNTREPANETOptions 'rule_hydraulic_timestep' -> Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds                               
-                {"time": {"duration": 936400.0, "hydraulic_timestep": 7200, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,              
-                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-                "specific_gravity": 1...[+1647 chars]                                                                                                             
-
-    ────────────────────────────────────────────────────────────────────────── Controls ──────────────────────────────────────────────────────────────────────────
-
-      🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
-                {"type": "simple", "condition": "TANK 2 LEVEL BELOW 33.528", "then_actions": ["PUMP 9 STATUS IS OPEN"]}                                           
-      🔴  WNTREPANETControl 'rule_no_controls_allowed' -> Controls not supported                                                                                  
-                {"type": "simple", "condition": "TANK 2 LEVEL ABOVE 42.672000000000004", "then_actions": ["PUMP 9 STATUS IS CLOSED"]}                             
-
-    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-Valid network without any rule violations (success)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    ❯ epanetparser -f ../../../models/epanetparser_test_models/valid_network.inp --use-ruleset milops10
-
-    ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-    │ This is epanetparser - a parser for EPANET network models based on pywrparser: `A parser for Pywr json network definitions` by Paul Slavin. It works with  │
-    │ JSON representations of EPANET models adhering to the JSON format specified by WNTR - `A Python package designed to simulate and analyze resilience of     │
-    │ water distribution networks.`                                                                                                                              │
-    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-                               ╭──────────────────────────────────────────────────────────────────────────────────────────────────────╮                           
-                               │ Parser results for '../../../models/epanetparser_test_models/valid_network.inp': 0 errors, 1 warning │                           
-                               ╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯                           
-
-    ────────────────────────────────────────────────────────────────────────── Options ───────────────────────────────────────────────────────────────────────────
-
-      🟡  MILOPS_1_0_Options 'warn_inpfile_units' -> Units not in litres per second. Units in INP file will be different than simulated                           
-                {"time": {"duration": 86400.0, "hydraulic_timestep": 3600, "quality_timestep": 300, "rule_timestep": 360, "pattern_timestep": 7200,               
-                "pattern_start": 0.0, "report_timestep": 3600, "report_start": 0.0, "start_clocktime": 0.0, "statistic": "NONE",                                  
-                "pattern_interpolation": false}, "hydraulic": {"headloss": "H-W", "hydraulics": null, "hydraulics_filename": null, "viscosity": 1.0,              
-                "specific_gravity": 1....[+1646 chars]                                                                                                            
-
-    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    File: valid_network.inp
-    sha256: ac05b0412f7f70e5ae10c18fbe3f1daeca880906a0b78067f3fb5c8a6e875bf2
+    ❯ epanetparser validate -f Net1.inp
+    File: Net1.inp
     Nodes: 11
     Links: 13
     Curves: 1
     Patterns: 1
+    Controls: 2
 
+They live in ``epanetparser/networks/core/``, and are reachable as
+``epanetparser.networks.core.Net1.inp``.
+
+A valid model produces a brief summary and exit status 0. An invalid one produces a
+report of findings and exit status 2:
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network.json --no-digest
+
+    ─────────────────────────────────────── 1 ───────────────────────────────────────
+
+      🔴  1 'E_CURVE_TYPE_UNSUPPORTED' -> Unsupported curve type None
+
+    ─────────────────────────────────────────────────────────────────────────────────
+    File: invalid_network.json
+    Nodes: 785
+    Links: 909
+    Curves: 1
+    Patterns: 3
+    Controls: 2
+
+    ❯ echo $?
+    2
+
+Every finding carries a stable code, such as ``E_CURVE_TYPE_UNSUPPORTED``, so downstream
+tooling can match on it without depending on message text.
+
+Or from Python, where parsing and validation are separate steps:
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+
+    from importlib.resources import files
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    report = network.validate()
+    for issue in report.errors:
+        print(issue.code, issue.component_name, issue.message)
+
+CLI usage
+---------
+
+The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
+``info`` and ``download-extra``.
+
+.. code-block:: console
+
+    ❯ epanetparser -h
+    usage: epanetparser [-h] [--version] {download-extra,validate,convert,info} ...
+
+    Parser and validator of EPANET water distribution network models.
+
+    options:
+    -h, --help            show this help message and exit
+    --version             Display the version of epanetparser
+
+    available commands:
+      download-extra       Download additional networks from GitHub release for
+                          testing and benchmarking
+      validate             Validate an EPANET model and display results
+      convert              Convert between INP and JSON formats
+      info                 Display information about the EPANET parser
+
+    ❯ epanetparser validate -h
+    usage: epanetparser validate [-h] -f <filename> [--ruleset <ruleset>]
+                                 [--list-rulesets] [--raise-on-warning]
+                                 [--ignore-warnings] [--raise-on-error]
+                                 [--json-output] [--pretty-output] [--no-emoji]
+                                 [--no-colour] [--terse-report] [--no-digest]
+
+    Validation Options:
+      --ruleset <ruleset>   Add a custom ruleset to the core ruleset. May be given
+                            more than once to apply several, e.g. --ruleset milp
+                            --ruleset project
+      --list-rulesets       List the available rulesets and exit
+      --raise-on-warning    Treat warnings as failures, so the exit status is
+                            non-zero
+      --ignore-warnings     Omit warnings from the report
+      --raise-on-error      Raise a structural parsing problem as an exception
+                            instead of reporting it
+
+    Display Options:
+      --json-output         Display parsing report in JSON format for machine
+                            reading
+      --pretty-output       Display parsing report on the console with colour
+                            (default)
+      --no-emoji            Omit emoji in console parsing reports
+      --no-colour           Omit colour output in console parsing reports.
+                            Implies --no-emoji
+      --terse-report        Display only a terse report for valid networks
+      --no-digest           Omit sha256 digest in JSON and dict parsing reports
+
+The exit status says whether the model is usable, so the command composes with a
+build:
+
+.. code-block:: text
+
+    0   the model parsed and validated with no errors
+    1   bad usage: an unknown ruleset, or an unreadable file with --raise-on-error
+    2   the model parsed but is invalid, or warned and --raise-on-warning was given
+
+Converting between formats
+--------------------------
+
+The ``convert`` subcommand translates between `INP` and WNTR `JSON`. The direction
+is inferred from the input extension, and the output filename is optional:
+
+.. code-block:: console
+
+    ❯ epanetparser convert Net1.inp Net1.json
+    ✓ Converted INP to JSON: Net1.json
+
+    ❯ epanetparser convert Net1.json roundtrip.inp
+    ✓ Converted JSON to INP: roundtrip.inp
+
+    ❯ epanetparser convert Net1.inp
+    ✓ Converted INP to JSON: Net1.json
+
+``--indent`` sets JSON indentation (default 2) and ``--epanet-version`` selects the
+EPANET version targeted when writing `INP` (default 2.2):
+
+.. code-block:: console
+
+    ❯ epanetparser convert Net1.json Net1_2_0.inp --epanet-version 2.0
+
+Downloading additional networks
+-------------------------------
+
+Additional benchmark networks are published as GitHub releases:
+
+.. code-block:: console
+
+    ❯ epanetparser download-extra --progress
+
+Inspecting the rulesets
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``epanetparser info --list-rulesets`` summarises what is available:
+
+.. code-block:: console
+
+    ❯ epanetparser info --list-rulesets
+    Available rule sets:
+      epanet_core (core) - EPANET core rules v1.0.0
+          module: epanetparser.core_rules.epanet_core
+          rules: 35 component, 9 network
+          Simulator-agnostic checks that a model is a well-formed EPANET model.
+      milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
+          module: epanetparser.custom_rules.milp
+          rules: 17 component, 0 network
+          Constraints imposed by an example MILP optimal pump scheduling tool.
+
+The ``epanetparser-plugins`` command shows more detail, and can discard the
+discovery cache after a new rule set package is installed:
+
+.. code-block:: console
+
+    ❯ epanetparser-plugins list
+    ❯ epanetparser-plugins show --ruleset milp
+    ❯ epanetparser-plugins show --ruleset epanet_core --component WNTREPANETNode
+    ❯ epanetparser-plugins refresh
+
+Usage examples
+--------------
+
+A model that is well-formed but violates the MILP ruleset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The same model passes the core ruleset and fails the custom one. That is the
+distinction the architecture is built to express, and it is visible in the
+report: the MILP findings are absent from the run without ``--ruleset``, and
+every finding that does appear is attributed to the ``milp`` ruleset.
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network_milp_ruleset.json --ruleset milp --no-digest
+
+    ╭──────────────────────────────────────────────────────────────────────────────╮
+    │ Results for 'invalid_network_milp_ruleset.json': 5 errors, 1 warning       │
+    ╰──────────────────────────────────────────────────────────────────────────────╯
+    ─────────────────────────────────── Network ────────────────────────────────────
+
+      🔴  network 'E_MILP_TIMESTEP' -> Simulation timestep 7200 seconds not equal
+      to MILOPS timestep 3600 seconds
+      🟡  network 'W_MILP_INPFILE_UNITS' -> Units not in LPS. Units in INP file
+      will be different than simulated: GPM
+      🔴  network 'E_MILP_CONTROL' -> Controls not supported
+      🔴  network 'E_MILP_CONTROL' -> Controls not supported
+
+    ───────────────────────────────────── 112 ──────────────────────────────────────
+
+      🔴  112 'E_MILP_CHECK_VALVE' -> Check valves not supported
+
+    ───────────────────────────────────── 111 ──────────────────────────────────────
+
+      🔴  111 'E_MILP_VALVE' -> Valve links not supported
+
+    ─────────────────────────────────────────────────────────────────────────────────
+    File: invalid_network_milp_ruleset.json
+    Nodes: 11
+    Links: 13
+    Curves: 1
+    Patterns: 1
+    Controls: 2
+
+    ❯ echo $?
+    2
+
+A model that passes the core ruleset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/valid_network.json --no-digest
+
+    File: valid_network.json
+    Nodes: 785
+    Links: 909
+    Curves: 1
+    Patterns: 3
+    Controls: 2
+
+    ❯ echo $?
+    0
+
+Without a report, because there is nothing to report. The same model under the
+MILP ruleset is rejected, since a 7 day simulation on a 5 minute timestep is
+not what that formulation models.
+
+A machine-readable report
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network.json --json-output --no-digest
+
+    {
+      "is_valid": false,
+      "counts": {
+        "ERROR": 2,
+        "WARNING": 1,
+        "INFO": 0
+      },
+      "issues": [
+        {
+          "code": "E_NETWORK_NAME_MISSING",
+          "message": "Network missing a name",
+          "severity": "ERROR",
+          "rule_id": "rule_network_has_name",
+          "ruleset_key": "epanet_core",
+          "component_type": "WNTREPANETNetworkInfo",
+          "component_name": null,
+          "attribute": "name",
+          "context": {
+            "ruleset": "epanet_core",
+            "component_subtype": "network_info"
+          }
+        },
+        ...
+      ]
+    }
+
+What does EPANETParser take from PywrParser and what is new?
+------------------------------------------------------------
+
+**EPANETParser** is a fork of **PywrParser**, so the shape of the package is
+familiar: a parser, a model, a CLI, and rules grouped by the component they
+apply to. What changed is *where the rules live* and *when they run*.
+
+Parsing builds a model and reports only structural problems. Validation is a
+separate, explicit step that returns a structured report. Rules live in rule
+sets, discovered through one mechanism, and are plain functions that ``assert``.
+They are not methods on the component classes, so adding validation never
+requires subclassing, patching or modifying a model class.
+
+EPANETParser structure
+----------------------
+
+**EPANETParser** is built from the following components:
+
+* ``WNTRJSONParser`` -- reads a WNTR JSON document and builds a model. It
+  performs no validation; it reports only problems that make a model
+  impossible to build, such as invalid JSON or a missing top-level section.
+* ``WNTREPANETNetwork`` -- the model: the component collections, plus a
+  name-to-component index for resolving references.
+* ``WNTREPANETType`` and its subclasses -- one thin wrapper per component
+  collection, holding a ``data`` dictionary and read-only accessors. They
+  contain no rules and cannot be extended to add them.
+* ``epanetparser.core.validation`` -- the validation engine: it selects rule
+  sets, runs their rules, and returns structured results.
+* ``epanetparser.core_rules`` and ``epanetparser.custom_rules`` -- the two rule
+  set packages. They are searched by the same pass, and are distinguished only
+  by the ``__is_core__`` attribute in their module metadata.
+
+The pipeline is:
+
+.. code-block:: text
+
+    EPANET input
+        |
+        v
+    Parser                    parsing only; no validation
+        |
+        v
+    EPANET model
+        |
+        v
+    Static validation         simulator-agnostic
+        |
+        v
+    Simulator
+        |
+        v
+    Simulation-specific validation
+
+The UML diagram describing the core classes and their relationships can be
+found in the ``docs/epanetparser_class_hierarchy.puml`` file.
+
+Validation architecture
+~~~~~~~~~~~~~~~~~~~~~~~
+
+A **rule set** is a module declaring ``__key__``, ``__ruleset_name__`` and
+``__version__``, containing plain functions that ``assert``:
+
+.. code-block:: python
+
+    from epanetparser.core.decorators import match
+    from epanetparser.core.validation import network_rule, rule
+
+    __key__ = "my_project"
+    __ruleset_name__ = "My project's rules"
+    __version__ = "1.0.0"
+
+    @rule("WNTREPANETLink", code="E_NO_CHECK_VALVES", attribute="check_valve")
+    def rule_no_check_valves(link) -> None:
+        """A check valve is not supported by our solver."""
+        assert link.data.get("check_valve") in (False, None), "Check valves not supported"
+
+    @rule("WNTREPANETNode", code="E_TANK_OVERFLOW", attribute="overflow")
+    @match("Tank")
+    def rule_no_tank_overflow(node) -> None:
+        """Our solver models tanks as closed cylinders."""
+        assert node.data.get("overflow") in (None, False), "Tank overflow not supported"
+
+    @network_rule(code="E_UNKNOWN_CURVE", attribute="pump_curve_name")
+    def rule_pump_curves_exist(network) -> None:
+        """Every pump must reference a curve that exists."""
+        for pump in network.links:
+            curve = pump.data.get("pump_curve_name")
+            assert not curve or curve in network.index.curves, "Unknown pump curve"
+
+Drop the module into ``epanetparser/custom_rules/`` and it is discovered
+automatically. Nothing else needs to change: no component class is imported, no
+registry entry is written, and no base class is subclassed. A rule set
+published as its own distribution can instead register through the
+``epanetparser.rulesets`` entry point group.
+
+**Exactly one** core rule set is selected per run; **any number** of custom rule
+sets may be selected alongside it. The core rule set, ``epanet_core``, checks
+that a model is a well-formed EPANET model: required component fields, valid
+component types, well-formed curves, unique names, and references that
+resolve. That is all it checks. It is simulator-agnostic, like a compiler's
+static checks.
+
+Constraints that belong to one application, such as the linearisation limits of
+an MILP pump scheduling formulation, live in a custom rule set. That is the
+distinction the architecture exists to express: a model can be a valid EPANET
+model and still be unusable by a particular tool, and both statements can be
+true of the same object at the same time.
+
+Validation runs in three stages, and the order is what makes a report readable:
+
+1. component-level rules run against every component, collection by collection;
+2. network-level rules run against the model as a whole, with a name index
+   available for resolving references;
+3. each rule's ``AssertionError`` becomes a ``ValidationIssue`` carrying a
+   stable ``code``, a severity, and the rule and rule set that produced it.
+
+Only ``Severity.ERROR`` findings make a report invalid. Warnings inform without
+blocking, which is the right default for a finding such as an input file
+recorded in flow units other than the ones being simulated.
+
+Python API
+~~~~~~~~~~
+
+.. code-block:: python
+
+    from importlib.resources import files
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from epanetparser.core.validation import Severity, ValidationContext, validate
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    # Core ruleset only.
+    report = network.validate()
+    assert report.is_valid, [issue.code for issue in report.errors]
+
+    # Core ruleset plus an application ruleset.
+    report = network.validate(["epanet_core", "milp"])
+
+    for issue in report.errors:
+        print(issue.code, issue.component_name, issue.message)
+
+A single component can be validated on its own, with only the rules that apply
+to it:
+
+.. code-block:: python
+
+    for node in network.nodes:
+        for issue in node.validate().errors:
+            print(issue.code, issue.component_name, issue.message)
+
+The selection can be given as a key, a list of keys, a context, or a mapping,
+so that a project can put the choice in one place:
+
+.. code-block:: python
+
+    context = ValidationContext(core="epanet_core", custom=["milp"])
+    report = network.validate(context)
+
+    # Equivalently:
+    report = validate(network, context)
+
+Any rule sets your project publishes are named here the same way. A key that is
+not discovered raises ``RuleSetSelectionError`` rather than being ignored, so a
+typo in a rule set name fails loudly instead of silently validating less than
+you asked for.
+
+Results
+~~~~~~~
+
+``validate()`` returns a ``ValidationReport``, never an exception for a rule
+failure. A rule that raises anything other than ``AssertionError`` is a defect
+in the rule, and raises ``RuleExecutionError`` instead of being reported as a
+finding about the model.
+
+.. code-block:: python
+
+    report.is_valid            # False if any finding is Severity.ERROR
+    report.errors              # the findings that block simulation
+    report.warnings            # findings that inform without blocking
+    report.by_code("E_UNKNOWN_CURVE_REFERENCE")
+    report.by_component("T1")
+    report.grouped_by_component()   # the shape display.write_results consumes
+    report.as_dict()                # JSON-serialisable
+
+An issue carries a stable code, so downstream tooling can match on it without
+depending on message text:
+
+.. code-block:: json
+
+    {
+      "code": "E_UNKNOWN_CURVE_REFERENCE",
+      "message": "Links reference undefined curves: PU1 pump_curve_name <C9>",
+      "severity": "ERROR",
+      "rule_id": "rule_link_curves_exist",
+      "ruleset_key": "epanet_core",
+      "component_type": "network",
+      "component_name": "Net1",
+      "attribute": "pump_curve_name",
+      "context": {"ruleset": "epanet_core"}
+    }
+
+Insisting rulesets
+~~~~~~~~~~~~~~~~~~
+
+The rules that used to be methods on the component classes have been moved,
+one for one, into the rule set packages. Their names, severities and messages
+are preserved; their codes are new, because a finding now has to be
+identifiable without reading the rule that produced it.
+
+===============================  ===============================================
+Previous location                Now
+===============================  ===============================================
+``node.py``                      ``core_rules/epanet_core/nodes.py``
+``link.py``                      ``core_rules/epanet_core/links.py``
+``curve.py``                     ``core_rules/epanet_core/curves.py``
+``pattern.py`` (name rule)       ``core_rules/epanet_core/patterns.py``
+``pattern.py`` (length rule)     ``custom_rules/milp.py``
+``options.py`` (3 group rules)   ``core_rules/epanet_core/options.py``
+``options.py`` (setting rules)   ``custom_rules/milp.py``
+``network_info.py``              ``core_rules/epanet_core/network_info.py``
+sources (previously no rules)    ``core_rules/epanet_core/sources.py``
+controls (previously no rules)   ``core_rules/epanet_core/controls.py``
+parser duplicate-name checks     ``core_rules/epanet_core/network.py``
+cross-component references       ``core_rules/epanet_core/network.py``
+===============================  ===============================================
+
+Two changes of substance came with the move. Required fields are now checked
+for a *value* rather than for the presence of a key, so a field set to
+``null`` is reported rather than silently accepted. And pattern length is no
+longer a core rule at all: EPANET has no fixed pattern length, so the count
+follows from the simulation duration and pattern timestep, which is a question
+for the model as a whole.
+
+Motivation
+----------
+
+The water community keeps building various tools either to extend **EPANET** capabilities
+or as new tools that are made to work with **EPANET** or that use **EPANET** for simulating
+water distribution networks (WDNs). Some examples include:
+
+* `MAGNets <https://github.com/meghnathomas/MAGNets>`_ -- *A Python package to aggregate and reduce water distribution network models*
+* `MILPNet <https://github.com/meghnathomas/MILPNet>`_ -- *Mixed-Integer Linear Programming framework for water distribution system optimization*
+
+These tools may impose certain restrictions on the networks, e.g., a mixed-integer linear
+optimizer for pump scheduling might impose certain restrictions on the network such as
+absence of certain types of pumps or valves, etc., that are not supported by the linearization
+scheme. In such cases, authors of a package can create a set of rules against which every
+new network used in the tool can be validated. Those rules belong in a custom rule set, where
+they apply to a model without redefining what a valid EPANET model is.
+
+Applications
+------------
+
+`epanetparser` can be used as a custom network model validator that is specific to a tool
+that is being developed which imposes restrictions on network models it can work with, e.g.,
+topological restrictions, types of junctions, presence/absence of controls and rules, etc.
+
+Additionally, `epanetparser` can be developed into a generic parser for any EPANET network model
+that defines the universal requirements that any EPANET network needs to fulfill in order to run
+without failures and/or output correct results.
+
+Configuration
+-------------
+
+On first import, `epanetparser` writes a configuration file to a platform-specific
+location, and merges your settings over the package defaults:
+
+* Linux: ``~/.config/epanetparser/default_config.yaml``
+* macOS: ``~/Library/Application Support/epanetparser/default_config.yaml``
+* Windows: ``%APPDATA%\\epanetparser\\default_config.yaml``
+
+Rule set search paths live under ``rule_set_discovery`` in that file, which is the
+single source of truth. The ``[tool.epanetparser]`` section of ``pyproject.toml`` is
+not read by the code.
+
+Contributing
+------------
+
+Contributions are welcome. Please run the test suite before opening a pull request:
+
+.. code-block:: console
+
+    ❯ poetry install
+    ❯ poetry run pytest
+
+CI runs the suite on Python 3.10 through 3.13. The two commands most worth running
+locally are the linters and the test suite:
+
+.. code-block:: console
+
+    ❯ poetry run pyflakes epanetparser tests
+    ❯ poetry run flake8 epanetparser tests
+
+Adding a validation rule requires no registry entry and no base class. Add a
+function decorated with ``@rule`` or ``@network_rule`` to the relevant module in
+``epanetparser/core_rules/epanet_core/``, and a test that fails without it.
+
+Please report bugs and feature requests as
+`GitHub issues <https://github.com/tomjanus/epanetparser/issues>`_.
+
+License
+-------
+
+**No license file has been added to this repository yet.** That is a deliberate
+gap rather than an oversight in the documentation: the licensing terms for
+`epanetparser` have not been settled, and choosing them is a decision for the
+maintainers rather than something to be guessed at in a README.
+
+Until a license is added, the absence of one means the default copyright rules
+apply and no permission to copy, modify or redistribute is granted. If you intend
+to use this code, please open an issue asking which license applies.
+
+Because ``epanetparser`` is a fork of ``pywrparser``, the upstream project's
+terms also apply to the code inherited from it, and that project carries no
+license file either. The upstream URL is
+https://github.com/pmslavin/pywrparser.
+
+Citation
+--------
+
+If you use `epanetparser` in academic work, please cite the project and the
+tools it builds on:
+
+.. code-block:: text
+
+    epanetparser: a toolkit for parsing, validating and converting EPANET
+    network models. https://github.com/tomjanus/epanetparser
+
+    Slavin, P. and Janus, T. pywrparser: a parser and validator for Pywr
+    network definitions. https://github.com/pmslavin/pywrparser
+
+    Wagner, J. et al. WNTR: A Python package to simulate and analyze resilience
+    of water distribution networks. https://github.com/USEPA/WNTR
+
+Acknowledgments
+----------------
+
+``epanetparser`` is a fork of ``pywrparser`` by Dr. Paul Slavin, and depends
+on `WNTR <https://github.com/USEPA/WNTR>`_ by the US EPA for EPANET model
+interpretation. Thanks are due to the authors of both.

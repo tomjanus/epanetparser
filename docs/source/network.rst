@@ -1,8 +1,6 @@
-The :class:`PywrNetwork` class
-==============================
+The :class:`WNTREPANETNetwork` class
+====================================
 
-.. autoclass:: pywrparser.types.network.PywrNetwork
-   :members:
+.. autoclass:: epanetparser.core.epanettypes.network.WNTREPANETNetwork
+   :members: from_file, from_json, build_index, invalidate_index, validate
    :undoc-members:
-   :exclude-members: validate
-

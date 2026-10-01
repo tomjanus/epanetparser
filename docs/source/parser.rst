@@ -1,10 +1,8 @@
-
-The :class:`PywrJSONParser` class
+The :class:`WNTRJSONParser` class
 =================================
 
-.. autoclass:: pywrparser.parsers.PywrJSONParser
-   :members:
+.. autoclass:: epanetparser.core.parsers.wntrjsonparser.WNTRJSONParser
+   :members: parse, enforce_unique, missing_keys, has_errors, has_warnings
    :undoc-members:
-   :exclude-members: enforce_unique
 
    .. automethod:: __init__
