@@ -15,12 +15,10 @@ EPANET Parser -- A toolkit for validating EPANET models
 for Pywr json network definitions"* developed by Dr. Paul Slavin from the University
 of Manchester, UK. While `pywrparser` enables validation and manipulation of **Pywr** networks,
 `epanetparser` is a modification of `pywrparser` that enables validation of **EPANET**
-network models. The source code for `pywrparser` is available at
-https://github.com/pmslavin/pywrparser whereas its documentation can be found at
-https://pmslavin.github.io/pywrparser/.
+network models. The source code for `pywrparser` is available `here <https://github.com/pmslavin/pywrparser>` whereas its documentation can be found `here https://pmslavin.github.io/pywrparser/>` 
 
-The source code for `epanetparser` is available at https://github.com/tomjanus/epanetparser.
-The documentation is located at https://tomjanus.github.io/epanetparser/.
+The source code for `epanetparser` is available `here <https://github.com/tomjanus/epanetparser>`.
+The documentation is located at `here <https://tomjanus.github.io/epanetparser/>`.
 
 `epanetparser` works on `JSON` representations of **EPANET** network models that use the
 format/schema defined in `USEPA WNTR - The Water Network Tool for Resilience <https://github.com/USEPA/WNTR>`_
@@ -30,7 +28,7 @@ and extends it with additional functionalities. For more information on **WNTR**
 refer to its documentation at http://wntr.readthedocs.io
 
 Both WNTR `JSON` and native **EPANET** `INP` files are accepted. An `INP` file is converted
-to the JSON representation with WNTR before being parsed.
+to the JSON representation before being parsed by `epanetparser`.
 
 Installation
 ------------
@@ -340,18 +338,6 @@ A machine-readable report
       ]
     }
 
-What does EPANETParser take from PywrParser and what is new?
-------------------------------------------------------------
-
-**EPANETParser** is a fork of **PywrParser**, so the shape of the package is
-familiar: a parser, a model, a CLI, and rules grouped by the component they
-apply to. What changed is *where the rules live* and *when they run*.
-
-Parsing builds a model and reports only structural problems. Validation is a
-separate, explicit step that returns a structured report. Rules live in rule
-sets, discovered through one mechanism, and are plain functions that ``assert``.
-They are not methods on the component classes, so adding validation never
-requires subclassing, patching or modifying a model class.
 
 EPANETParser structure
 ----------------------
@@ -379,7 +365,7 @@ The pipeline is:
     EPANET input
         |
         v
-    Parser                    parsing only; no validation
+    Parser                    parsing and validation
         |
         v
     EPANET model
@@ -545,38 +531,6 @@ depending on message text:
       "context": {"ruleset": "epanet_core"}
     }
 
-Insisting rulesets
-~~~~~~~~~~~~~~~~~~
-
-The rules that used to be methods on the component classes have been moved,
-one for one, into the rule set packages. Their names, severities and messages
-are preserved; their codes are new, because a finding now has to be
-identifiable without reading the rule that produced it.
-
-===============================  ===============================================
-Previous location                Now
-===============================  ===============================================
-``node.py``                      ``core_rules/epanet_core/nodes.py``
-``link.py``                      ``core_rules/epanet_core/links.py``
-``curve.py``                     ``core_rules/epanet_core/curves.py``
-``pattern.py`` (name rule)       ``core_rules/epanet_core/patterns.py``
-``pattern.py`` (length rule)     ``custom_rules/milp.py``
-``options.py`` (3 group rules)   ``core_rules/epanet_core/options.py``
-``options.py`` (setting rules)   ``custom_rules/milp.py``
-``network_info.py``              ``core_rules/epanet_core/network_info.py``
-sources (previously no rules)    ``core_rules/epanet_core/sources.py``
-controls (previously no rules)   ``core_rules/epanet_core/controls.py``
-parser duplicate-name checks     ``core_rules/epanet_core/network.py``
-cross-component references       ``core_rules/epanet_core/network.py``
-===============================  ===============================================
-
-Two changes of substance came with the move. Required fields are now checked
-for a *value* rather than for the presence of a key, so a field set to
-``null`` is reported rather than silently accepted. And pattern length is no
-longer a core rule at all: EPANET has no fixed pattern length, so the count
-follows from the simulation duration and pattern timestep, which is a question
-for the model as a whole.
-
 Motivation
 ----------
 
@@ -682,5 +636,5 @@ Acknowledgments
 ----------------
 
 ``epanetparser`` is a fork of ``pywrparser`` by Dr. Paul Slavin, and depends
-on `WNTR <https://github.com/USEPA/WNTR>`_ by the US EPA for EPANET model
-interpretation. Thanks are due to the authors of both.
+on some of the code from WNTR <https://github.com/USEPA/WNTR>`_ by the US EPA.
+Thanks are due to the authors of both.
