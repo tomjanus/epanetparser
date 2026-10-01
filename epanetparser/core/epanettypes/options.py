@@ -1,107 +1,115 @@
-""" """
-from typing import Dict
-from collections.abc import KeysView
+"""Network options component.
+
+The options component wraps the ``[OPTIONS]``, ``[TIMES]``, ``[REPORT]``,
+``[QUALITY]``, ``[REACTIONS]``, ``[ENERGY]`` and ``[GRAPHICS]`` blocks of an
+EPANET model, which WNTR's JSON representation groups under the ``options``
+key.
+
+The accessors below return whole sub-blocks, not individual settings. Rules
+read the settings they care about from those blocks, which keeps the class
+independent of any particular EPANET version's option set.
+
+Validation rules for options live in
+:mod:`epanetparser.core_rules.epanet_core.options`; constraints imposed by a
+particular solver, such as a fixed simulation horizon, belong in a custom
+ruleset.
+"""
+from typing import Any, Dict, KeysView, Optional
+
 from .base import WNTREPANETType
 
 
-TIME_HORIZON = 24 # MILOPS scheduling time-horizon (make configurable)
-TIME_STEP = 1 # MILOPS timestep of 1hr (make configurable)
-HEADLOSS_MODELS = ("D-W", "H-W") # Unsupported model: C-M
-
-
 class WNTREPANETOptions(WNTREPANETType):
-    """ """
-    def __init__(self, data):
-        self.data = data
+    """The simulation options of an EPANET model.
+
+    Attributes
+    ----------
+    component_kind : str
+        ``"options"``.
+
+    Notes
+    -----
+    This component is always present: the parser requires the ``options`` key
+    in the source document. A missing sub-block is reported by a validation
+    rule rather than raising here, so a partially specified model can still be
+    parsed and reported on as a whole.
+
+    Examples
+    --------
+    >>> from epanetparser.core.epanettypes.options import WNTREPANETOptions
+    >>> options = WNTREPANETOptions({"time": {"duration": 86400}})
+    >>> options.time_options["duration"]
+    86400
+    >>> options.hydraulic_options is None
+    True
+    """
+
+    component_kind: str = "options"
+
+    def __init__(self, data: Dict[str, Any]) -> None:
+        """Store the options.
+
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            Mapping of option group name to that group's settings.
+        """
+        super().__init__(data)
 
     @property
-    def time_options(self) -> Dict:
+    def time_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the time group, or None if the group is absent."""
         return self.data.get("time")
-    
+
     @property
-    def hydraulic_options(self) -> Dict:
+    def hydraulic_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the hydraulics group, or None if the group is absent."""
         return self.data.get("hydraulic")
 
     @property
-    def report_options(self) -> Dict:
+    def report_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the report group, or None if the group is absent."""
         return self.data.get("report")
-    
+
     @property
-    def quality_options(self) -> Dict:
+    def quality_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the quality group, or None if the group is absent."""
         return self.data.get("quality")
-    
+
     @property
-    def reaction_options(self) -> Dict:
+    def reaction_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the reactions group, or None if the group is absent."""
         return self.data.get("reaction")
 
     @property
-    def energy_options(self) -> Dict:
+    def energy_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the energy group, or None if the group is absent."""
         return self.data.get("energy")
-    
+
     @property
-    def graphics_options(self) -> Dict:
+    def graphics_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the graphics group, or None if the group is absent."""
         return self.data.get("graphics")
-    
+
+    @property
+    def user_options(self) -> Optional[Dict[str, Any]]:
+        """Settings of the ``[USER]`` group, or None if the group is absent.
+
+        Notes
+        -----
+        WNTR emits a ``user`` group that ``WNTREPANETOptions`` does not model
+        as a first-class concept. It is exposed here for completeness and is
+        otherwise unvalidated; see
+        ``docs/TODO_MODEL_LAYER_DUPLICATION.md``.
+        """
+        return self.data.get("user")
+
     @property
     def attrs(self) -> KeysView:
+        """View of the option group names."""
         return self.data.keys()
-    
+
     @property
     def type(self) -> str:
+        """Component type identifier, always ``"WNTR_Network_Options"``."""
         return "WNTR_Network_Options"
-
-    """ Generic validation rules for networks not requiring quality and reaction modelling """
-
-    def rule_time_section_required(self) -> None:
-        assert self.time_options is not None, "Time section not defined"
-
-    def rule_hydraulic_section_required(self) -> None:
-        assert self.hydraulic_options is not None, "Hydraulics not defined"
-
-    def rule_energy_section_required(self) -> None:
-        assert self.energy_options is not None, "Energy options not defined"
-
-    """ MILOPS-specific validation rules """
-
-    def rule_simulation_time_horizon(self) -> None:
-        sim_time_horizon = self.time_options.get("duration")
-        assert self.time_options.get("duration") >= TIME_HORIZON * 3600, \
-            f"Simulation time horizon {sim_time_horizon} seconds shorter than schedule time horizon {TIME_HORIZON * 3600} seconds"
-
-    def rule_hydraulic_timestep(self) -> None:
-        hydraulic_timestep = self.time_options.get("hydraulic_timestep")
-        assert hydraulic_timestep == TIME_STEP * 3600, \
-            f"Simulation timestep {hydraulic_timestep} seconds not equal to MILOPS timestep {TIME_STEP * 3600} seconds"
-        
-    # The below rules can be moved to strict ruleset
-
-    def rule_headloss_model(self) -> None:
-        supported_models: str = ", ".join(HEADLOSS_MODELS)
-        assert self.hydraulic_options.get("headloss") in HEADLOSS_MODELS, \
-            f"Improper headloss model. Supported models {supported_models}"
-        
-    def rule_viscosity(self) -> None:
-        assert self.hydraulic_options.get("viscosity") == 1, "Viscosity is not 1.0"
-
-    def rule_specific_gravity(self) -> None:
-        assert self.hydraulic_options.get("specific_gravity") == 1, \
-            "Specific gravity is not 1.0"
-
-    def rule_demand_model(self) -> None:
-        assert self.hydraulic_options.get("demand_model") == "DDA", \
-            "Demand model is not DDA (fixed demand)"
-
-    def rule_pressure_units(self) -> None:
-        inpfile_pressure_units = self.hydraulic_options.get("inpfile_pressure_units")
-        assert inpfile_pressure_units is None, \
-            f"Unsupported pressure units: {inpfile_pressure_units}"
-
-    def rule_zero_demand_charge(self) -> None:
-        demand_charge = self.energy_options.get("demand_charge")
-        assert demand_charge == 0, "Nonzero demand charge"
-
-    def warn_inpfile_units(self) -> None:
-        inpfile_units = self.hydraulic_options.get("inpfile_units")
-        # Available unit options:
-        # CFS/GPM/MGD/IMGD/AFD/LPS/LPM/MLD/CMH/CMD
-        assert inpfile_units == "LPS", "Units not in litres per second. Units in INP file will be different than simulated"

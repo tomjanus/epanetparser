@@ -1,14 +1,21 @@
-"""Command-line interface for parsing, validating, and converting EPANET network models.
+"""Command-line interface for parsing, validating, and converting EPANET models.
 
 This module provides a comprehensive CLI tool for working with EPANET water distribution
 network models. It supports parsing and validation of models in WNTR JSON format,
 bidirectional conversion between EPANET INP and WNTR JSON formats, and provides
 detailed error and warning reporting with customizable output formats.
 
-The validation framework is built on top of WNTR (Water Network Tool for Resilience)
-and provides extensive error and warning reporting for all network components including
-nodes (junctions, reservoirs, tanks), links (pipes, pumps, valves), patterns, curves,
-sources, and controls.
+Parsing and validation are separate steps. Parsing builds a model and reports
+only structural problems, such as a document that is not valid JSON or that
+omits a required section. Validation then applies one core ruleset, plus any
+custom rulesets the user selects, and reports what it finds as a structured
+report. A model can be valid, invalid, or unvalidated, and the command line
+distinguishes those cases.
+
+Static validation is simulator-agnostic: the core ruleset checks that a model
+is a well-formed EPANET model, not that any particular tool can simulate it.
+Constraints belonging to one application, such as an MILP pump scheduling
+formulation, live in custom rulesets and are opted into with ``--ruleset``.
 
 Subcommands
 -----------
@@ -18,38 +25,52 @@ download-extra : Download extra network files
 
 validate : Validate EPANET models
     Parse and validate EPANET network models in INP or WNTR JSON format with
-    support for custom validation rulesets. Provides detailed error and warning
+    support for custom rulesets. Provides detailed error and warning
     reports with configurable output formats (pretty console, JSON, terse).
-    
+
 convert : Convert between formats
     Bidirectional conversion between EPANET INP (text) and WNTR JSON formats.
     Supports custom output paths and configurable JSON indentation.
 
 download : Download network files
-    Download files from Google Drive using presets (e.g., 'networks') or
+    Download network files from Google Drive using presets (e.g., 'networks') or
     manually specify a folder URL and output directory. Presets provide
     quick access to commonly used resources like benchmark networks.
-    
+
 info : Display parser information
-    Show parser version information and list available validation rulesets.
+    Show parser version information and list available rulesets.
 
 Key Features
 ------------
 - Supports both EPANET INP and WNTR JSON input formats
-- Customizable validation rulesets for different use cases
+- Simulator-agnostic core ruleset, plus any number of custom rulesets
+- Structured validation results: stable issue codes, severities and context
 - Rich console output with colors and emoji (optional)
 - JSON output for programmatic processing
 - Bidirectional format conversion (INP ↔ JSON)
-- Comprehensive error and warning reporting
 - SHA-256 digest generation for file verification
 - EPANET version targeting for INP output
+
+Exit Status
+-----------
+0
+    The model parsed and validated with no errors, or the command produced the
+    output that was asked for.
+1
+    Bad usage: an unknown ruleset, or an unreadable input file with
+    ``--raise-on-error``.
+2
+    The model parsed but is invalid, or has warnings and ``--raise-on-warning``
+    was given.
 
 Usage Examples
 --------------
 Validate a network model:
     $ epanetparser validate -f network.json
-    $ epanetparser validate -f network.inp --use-ruleset milp
+    $ epanetparser validate -f network.inp --ruleset milp
+    $ epanetparser validate -f network.inp --ruleset milp --ruleset project
     $ epanetparser validate -f network.json --json-output --no-digest
+    $ epanetparser validate -f network.json --list-rulesets
 
 Convert between formats:
     $ epanetparser convert network.inp output.json
@@ -79,6 +100,7 @@ EPANET: EPA's Water Distribution System Modeling Software
     https://www.epa.gov/water-research/epanet
 """
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -86,17 +108,19 @@ from typing import List
 from rich_argparse import RichHelpFormatter
 from rich import print as rprint
 
-from epanetparser.core import  rulesets, __version__
-from epanetparser.core.display import (
-    console,
-    results_as_json,
-    write_results
-)
+from epanetparser.core import __version__, console
+from epanetparser.core.display import results_as_json, write_results
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.lib.converter import WNTRINPJSONConverter
 from epanetparser.core.utils import sha256digest
 from epanetparser.core.download import download_networks
 from epanetparser.core.environment import PackageResolver
+from epanetparser.core.validation import (
+    RuleSetRegistry,
+    RuleSetSelectionError,
+    ValidationContext,
+    ValidationReport,
+)
 
 RichHelpFormatter.usage_markup = True
 
@@ -174,26 +198,38 @@ def configure_args(args: List[str]) -> argparse.Namespace:
     
     # Validation options for validate command
     validation = validate_parser.add_argument_group("validation options")
-    validation.add_argument("--use-ruleset",
+    validation.add_argument("--ruleset",
         metavar="<ruleset>",
-        type=str,
+        action="append",
         default=None,
-        help="Apply the specified ruleset during parsing"
+        dest="rulesets",
+        help=(
+            "Add a custom ruleset to the core ruleset. May be given more than "
+            "once to apply several, e.g. --ruleset milp --ruleset project"
+        )
+    )
+    validation.add_argument("--list-rulesets",
+        action="store_true",
+        default=False,
+        help="List the available rulesets and exit"
     )
     validation.add_argument("--raise-on-warning",
         action="store_true",
         default=False,
-        help="Raise failures of parsing warnings as exceptions. Implies --raise-on-error"
-    )
-    validation.add_argument("--raise-on-error",
-        action="store_true",
-        default=False,
-        help="Raise failures of parsing rules as exceptions"
+        help="Treat warnings as failures, so the exit status is non-zero"
     )
     validation.add_argument("--ignore-warnings",
         action="store_true",
         default=False,
-        help="Do not display parsing report if only warnings are present"
+        help="Omit warnings from the report"
+    )
+    validation.add_argument("--raise-on-error",
+        action="store_true",
+        default=False,
+        help=(
+            "Raise a structural parsing problem as an exception instead of "
+            "reporting it"
+        )
     )
 
     # Display options for validate command
@@ -269,7 +305,6 @@ def configure_args(args: List[str]) -> argparse.Namespace:
         default=False,
         help="Display a list of all available rulesets"
     )
-
     if len(args) == 0:
         parser.print_help()
         sys.exit(0)
@@ -294,68 +329,143 @@ def handle_download(args: argparse.Namespace) -> None:
 
 def handle_validate(args: argparse.Namespace) -> None:
     """Handle the 'validate' command for validating an EPANET model.
-    
-    Executes the validation workflow for a specified EPANET model file, including
-    parsing, applying rulesets, and displaying results based on provided arguments.
-    
+
+    Parses the model, validates it against the selected rulesets, and displays
+    the results. Parsing problems and validation findings are reported
+    separately, because they answer different questions: whether the document
+    could be read at all, and whether the model it describes is correct.
+
     Args:
-        args: Parsed command-line arguments specific to the 'validate' command.
-    
+        args: Parsed command-line arguments for the 'validate' command.
+
     Raises:
-        SystemExit: Exits with code 1 for invalid ruleset.
+        SystemExit: Exits with code 1 for an unknown ruleset, and with code 2
+            when the model is invalid and --raise-on-error was not given.
     """
     filename = args.filename
     raise_error = args.raise_on_error
     raise_warning = args.raise_on_warning
     useemoji = not args.no_emoji if not args.no_colour else False
     include_digest = not args.no_digest
-    ruleset = args.use_ruleset
+    context = _build_context(args.rulesets)
 
-    # Validate ruleset if specified
-    if ruleset:
-        _rulesets = rulesets.get_rulesets_metadata()
-        if ruleset not in _rulesets:
-            rprint(f"No ruleset with key: {ruleset}", file=sys.stderr)
-            sys.exit(1)
+    if args.list_rulesets:
+        rprint(RuleSetRegistry().describe())
+        return
 
-    # Set console color mode
     if args.no_colour:
         console.no_color = True
 
-    # Parse the network
+    # Parse the model. Nothing is validated here: a document that cannot be
+    # parsed is reported as a structural problem and nothing more.
     network, errors, warnings = WNTREPANETNetwork.from_file(
-        filename, 
+        filename,
         raise_on_parser_error=raise_error,
-        raise_on_parser_warning=raise_warning,
-        ignore_warnings=args.ignore_warnings,
-        ruleset=ruleset
     )
 
-    # Display errors and warnings if present
-    if errors or warnings:
-        if not errors and args.ignore_warnings:
-            # Do nothing - warnings are ignored and no errors present
-            pass
-        elif args.json_output:
-            console.print(results_as_json(filename, errors, warnings, include_digest=include_digest))
+    if network is None:
+        # Nothing was validated, so the command must not claim the model is
+        # fine. Exiting 1 rather than 2: 2 would mean the model was parsed and
+        # found invalid, and this is not that.
+        if not args.json_output:
+            write_results(filename, errors or {}, warnings, use_emoji=useemoji)
         else:
-            write_results(filename, errors, warnings, use_emoji=useemoji)
+            _print_json(
+                results_as_json(
+                    filename, errors, warnings, include_digest=include_digest
+                )
+            )
+        sys.exit(1)
 
-    # Display network report if validation succeeded
-    if network:
-        if args.terse_report:
-            report = network.report()
-            console.print(report)
-        else:
-            report = network.verbose_report()
-            file_txt = f"[green]File:[/green] [bold blue]{os.path.basename(filename)}[/bold blue]"
-            console.print(file_txt)
-            if include_digest:
-                digest_txt = f"[green]sha256:[/green] [blue]{sha256digest(filename)}[/blue]"
-                console.print(digest_txt)
+    try:
+        report = network.validate(context)
+    except RuleSetSelectionError as exc:
+        rprint(f"[red]Error:[/red] {exc}", file=sys.stderr)
+        sys.exit(1)
 
-            for prefix, txt in report.items():
-                console.print(f"[green]{prefix}:[/green] [blue]{txt}[/blue]")
+    if args.ignore_warnings:
+        report = ValidationReport(
+            [issue for issue in report if not issue.is_warning]
+        )
+
+    if args.json_output:
+        # Machine-readable output means exactly one JSON document on stdout, so
+        # the human-readable component counts are not printed alongside it.
+        _print_json(json.dumps(report.as_dict(), indent=2))
+    else:
+        if len(report):
+            write_results(filename, use_emoji=useemoji, results=report)
+        _print_report(network, filename, args, include_digest)
+
+    if not report.is_valid and not raise_error:
+        sys.exit(2)
+    if report.warnings and raise_warning:
+        sys.exit(2)
+
+
+def _build_context(rulesets) -> ValidationContext:
+    """Build a validation context from the requested custom rulesets.
+
+    Args:
+        rulesets: Custom rule set keys from the command line, or None.
+
+    Returns:
+        ValidationContext: The core ruleset plus the requested custom ones.
+
+    Raises:
+        SystemExit: Exits with code 1 if a key is not a discovered ruleset.
+    """
+    context = ValidationContext(custom=tuple(rulesets or ()))
+    registry = context.registry
+    available = registry.keys()
+    for key in context.custom:
+        if key not in available:
+            rprint(
+                f"[red]Error:[/red] No ruleset with key '{key}'. "
+                f"Available: {', '.join(available) or '<none>'}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    return context
+
+
+def _print_json(payload: str) -> None:
+    """Write a JSON document to stdout without reformatting it.
+
+    Args:
+        payload: The serialised document.
+
+    Notes:
+        Prints through the standard library rather than the Rich console.
+        Rich wraps output to the terminal width, which inserts real newlines
+        into the text and turns the document into invalid JSON.
+    """
+    print(payload)
+
+
+def _print_report(
+    network: WNTREPANETNetwork,
+    filename: str,
+    args: argparse.Namespace,
+    include_digest: bool,
+) -> None:
+    """Print the component counts of a successfully parsed model.
+
+    Args:
+        network: The parsed model.
+        filename: Path the model was read from.
+        args: Parsed command-line arguments.
+        include_digest: If True, print the model's SHA-256 digest.
+    """
+    if args.terse_report:
+        console.print(network.report())
+        return
+    report = network.verbose_report()
+    console.print(f"[green]File:[/green] [bold blue]{os.path.basename(filename)}[/bold blue]")
+    if include_digest:
+        console.print(f"[green]sha256:[/green] [blue]{sha256digest(filename)}[/blue]")
+    for prefix, count in report.items():
+        console.print(f"[green]{prefix}:[/green] [blue]{count}[/blue]")
     
 
 def handle_convert(args: argparse.Namespace) -> None:
@@ -408,22 +518,24 @@ def handle_convert(args: argparse.Namespace) -> None:
 
 def handle_info(args: argparse.Namespace) -> None:
     """Handle the 'info' command for displaying parser information.
-    
-    Executes the information display workflow, including listing available rulesets
-    if requested.
-    
+
     Args:
-        args: Parsed command-line arguments specific to the 'info' command.
+        args: Parsed command-line arguments for the 'info' command.
     """
     if args.list_rulesets:
-        console.print(rulesets.describe_rulesets(), end="")
-    else:
-        # Display general parser information
-        console.print(f"[bold]EPANET Parser[/bold] version {__version__}")
-        console.print("\nA tool for parsing and validating EPANET network models.")
-        console.print("\nUse 'epanetparser info --list-rulesets' to see available validation rulesets.")
-        console.print("Use 'epanetparser validate --help' for validation options.")
-        console.print("Use 'epanetparser convert --help' for conversion options.")
+        console.print(RuleSetRegistry().describe())
+        return
+    console.print(f"[bold]EPANET Parser[/bold] version {__version__}")
+    console.print("\nA tool for parsing and validating EPANET network models.")
+    console.print(
+        "\nParsing builds a model; validation is a separate, explicit step "
+        "that returns a structured report."
+    )
+    console.print(
+        "\nUse 'epanetparser info --list-rulesets' to see available rulesets."
+    )
+    console.print("Use 'epanetparser validate --help' for validation options.")
+    console.print("Use 'epanetparser convert --help' for conversion options.")
     
 
 def handle_args(args: argparse.Namespace) -> None:
@@ -454,7 +566,11 @@ def handle_args(args: argparse.Namespace) -> None:
         handle_download(args)
     else:
         # This shouldn't happen if argparse is configured correctly
-        rprint(f"[red]Error:[/red] No command specified. Use --help for usage information.", file=sys.stderr)
+        rprint(
+            "[red]Error:[/red] No command specified. "
+            "Use --help for usage information.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
@@ -464,6 +580,10 @@ def run() -> None:
     Parses command-line arguments and executes the validation workflow.
     Called when the module is run as a script.
     """
+    # Ensure library is initialized (config, autodiscovery, etc.)
+    from epanetparser.core.init import initialize
+    initialize()
+    
     args = configure_args(sys.argv[1:])
     handle_args(args)
 

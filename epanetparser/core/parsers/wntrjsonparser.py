@@ -1,290 +1,344 @@
-"""WNTR JSON format parser for EPANET network models.
+"""Parser for EPANET network models in WNTR's JSON format.
 
-This module provides a parser for EPANET network models encoded in WNTR's JSON format.
-It validates the network structure against configurable rulesets and collects errors and
-warnings during the parsing process.
+This parser builds a model and nothing else. It does not validate: assigning a
+field never runs a rule, and a model that EPANET could not simulate still
+parses successfully here. That separation is deliberate, so that the same
+parser serves users who only want a model, users who want the core ruleset,
+and users who want their own rulesets as well.
 
-The parser handles all major EPANET components including:
-- Network metadata (name, version, comments)
-- Options (simulation parameters)
-- Curves (pump/valve curves)
-- Patterns (demand/control patterns)
-- Nodes (junctions, tanks, reservoirs)
-- Links (pipes, pumps, valves)
-- Sources (water quality sources)
-- Controls (simple and rule-based controls)
+What the parser does report is *structural*: a document that is not JSON, or
+one that omits a required top-level key, cannot be turned into a model at all.
+Those problems are raised as
+:class:`~epanetparser.core.epanettypes.exceptions.WNTREPANETParserException`.
+Everything else a model might get wrong, from a missing field to a reference
+that points at nothing, is a validation concern and is found by
+:meth:`epanetparser.core.epanettypes.network.WNTREPANETNetwork.validate`.
 
-Key Features:
-- Flexible error handling (raise immediately or collect)
-- Warning collection for non-critical issues
-- Duplicate component detection
-- Ruleset-based validation
+Duplicate-name detection used to live here. It is now a network rule in
+:mod:`epanetparser.core_rules.epanet_core.network`, because a duplicate name is
+a defect in the model rather than in its encoding.
+
+# TODO: the component inventory below is restated in several other modules, so
+#       adding a component means editing all of them. See
+#       docs/TODO_MODEL_LAYER_DUPLICATION.md, section 1.
+
+Component groups
+----------------
+============  ==========================================================
+Key           Contents
+============  ==========================================================
+metadata      ``name``, ``comment``, ``version``, ``references``
+``options``   Simulation options, by option group
+``curves``    Pump, head, efficiency and volume curves
+``patterns``  Time patterns
+``nodes``     Junctions, reservoirs and tanks
+``links``     Pipes, pumps and valves
+``sources``   Water quality sources
+``controls``  Simple and rule-based controls
+============  ==========================================================
+
+Required keys are ``options``, ``nodes`` and ``links``. A model with no curves,
+patterns, sources or controls is normal and those keys may be absent.
 """
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import json
-from collections import defaultdict
-from functools import partial
-from epanetparser.core import ruleset_registry as rulesets
-from epanetparser.core.epanettypes.exceptions import (
-    WNTREPANETParserException,
-    WNTREPANETNetworkValidationError
-)
-from epanetparser.core.utils import raiseorpush
 
-# Constants for handling duplicate keys in JSON
+from epanetparser.core.epanettypes import (
+    WNTREPANETControl,
+    WNTREPANETCurve,
+    WNTREPANETLink,
+    WNTREPANETNetworkInfo,
+    WNTREPANETNode,
+    WNTREPANETOptions,
+    WNTREPANETPattern,
+    WNTREPANETSource,
+)
+from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException
+
+#: Top-level keys that must be present for a document to be a model.
+REQUIRED_KEYS: Tuple[str, ...] = ("options", "nodes", "links")
+
+#: Optional top-level keys, and the attribute each is parsed into.
+OPTIONAL_KEYS: Tuple[str, ...] = (
+    "curves",
+    "patterns",
+    "sources",
+    "controls",
+)
+
+#: Metadata fields taken from the top level of the document.
+METADATA_KEYS: Tuple[str, ...] = ("version", "comment", "name", "references")
+
+#: Prefix used to flag duplicate JSON object keys so that none is silently lost.
 DUP_KEY_BASE = "__WNTREPANETParser_Duplicate_Key_{pattern}__"
 DUP_KEY_FLAG = DUP_KEY_BASE.format(pattern="{idx:03d}")
-DUP_KEY_RE = r"{base}".format(base=DUP_KEY_BASE.format(pattern="[0-9]{3}"))
 
 
 class WNTRJSONParser:
-    """Parser for EPANET network models in WNTR JSON format.
-    
-    This parser validates and processes EPANET network models encoded in WNTR's
-    JSON format. It applies validation rules from the specified ruleset and
-    collects errors and warnings encountered during parsing.
-    
-    Attributes:
-        errors: Dictionary mapping component types to lists of validation errors.
-        warnings: Dictionary mapping component types to lists of validation warnings.
-        src: Parsed JSON source dictionary.
-        network_info: Parsed network metadata (WNTREPANETNetworkInfo object).
-        options: Parsed simulation options (WNTREPANETOptions object).
-        curves: List of parsed curve objects.
-        patterns: List of parsed pattern objects.
-        nodes: List of parsed node objects.
-        links: List of parsed link objects.
-        sources: List of parsed source objects.
-        controls: List of parsed control objects.
+    """Builds an EPANET model from a WNTR JSON document.
+
+    Parameters
+    ----------
+    json_src : str
+        JSON-encoded text of an EPANET model in WNTR's format.
+
+    Attributes
+    ----------
+    src : Dict[str, Any]
+        The decoded document, with duplicate object keys flagged rather than
+        dropped.
+    errors : Dict[str, List[WNTREPANETParserException]]
+        Structural problems that prevented a model from being built, grouped
+        by component collection. Kept for compatibility; empty after a
+        successful parse.
+    warnings : Dict[str, List[Any]]
+        Structural warnings. Kept for compatibility; the parser produces none,
+        because non-fatal findings belong to validation.
+    network_info : WNTREPANETNetworkInfo
+        Model metadata.
+    options : WNTREPANETOptions
+        Simulation options.
+    curves : List[WNTREPANETCurve]
+        Curves, in document order.
+    patterns : List[WNTREPANETPattern]
+        Patterns, in document order.
+    nodes : List[WNTREPANETNode]
+        Nodes, in document order. Duplicates are kept, not silently merged.
+    links : List[WNTREPANETLink]
+        Links, in document order. Duplicates are kept, not silently merged.
+    sources : List[WNTREPANETSource]
+        Water quality sources, in document order.
+    controls : List[WNTREPANETControl]
+        Controls, in document order.
+
+    Raises
+    ------
+    WNTREPANETParserException
+        If the text is not valid JSON.
+
+    Notes
+    -----
+    The parser takes no ruleset argument. Validation is a separate, explicit
+    step, so there is nothing for the parser to be configured with.
+
+    Examples
+    --------
+    >>> parser = WNTRJSONParser(json_src)   # doctest: +SKIP
+    >>> parser.parse()                      # doctest: +SKIP
+    >>> network = WNTREPANETNetwork(parser) # doctest: +SKIP
+    >>> network.validate().is_valid         # doctest: +SKIP
+    False
     """
-    
-    def __init__(self, json_src: str, ruleset: Optional[str] = None) -> None:
-        """Initialize the parser with JSON source and optional ruleset.
 
-        Args:
-            json_src: JSON-encoded string representation of an EPANET network
-                     in WNTR format.
-            ruleset: Optional key of a ruleset to apply during validation.
-        
-        Raises:
-            WNTREPANETParserException: If the JSON is invalid or malformed.
+    def __init__(self, json_src: str) -> None:
+        """Decode the document and prepare empty component stores.
+
+        Parameters
+        ----------
+        json_src : str
+            JSON-encoded text of an EPANET model in WNTR's format.
+
+        Raises
+        ------
+        WNTREPANETParserException
+            If ``json_src`` is not valid JSON.
         """
-
-        self.errors: Dict[str, List] = defaultdict(list)
-        self.warnings: Dict[str, List] = defaultdict(list)
-
-        if ruleset:
-            self.set_parser_ruleset(ruleset)
+        self.errors: Dict[str, List[WNTREPANETParserException]] = {}
+        self.warnings: Dict[str, List[Any]] = {}
+        self._raise_on_error = False
 
         try:
             self.src: Dict[str, Any] = json.loads(
-                json_src, object_pairs_hook=self.__class__.enforce_unique)
-        except json.decoder.JSONDecodeError as err:
-            raise WNTREPANETParserException(f"Invalid JSON document: {str(err)}") from None
+                json_src, object_pairs_hook=self.enforce_unique
+            )
+        except json.JSONDecodeError as err:
+            raise WNTREPANETParserException(
+                f"Invalid JSON document: {err}"
+            ) from None
 
-        # Containers for storing WNTR Type objects that pass validation
-        self.network_info: Dict[str, Any] = {}
-        self.options: Dict[str, Any] = {}
-        self.curves: List[Any] = []
-        self.patterns: List[Any] = []
-        self.nodes: List[Any] = []
-        self.links: List[Any] = []
-        self.sources: List[Any] = []
-        self.controls: List[Any] = []
-
+        self.network_info: WNTREPANETNetworkInfo = WNTREPANETNetworkInfo({})
+        self.options: WNTREPANETOptions = WNTREPANETOptions({})
+        self.curves: List[WNTREPANETCurve] = []
+        self.patterns: List[WNTREPANETPattern] = []
+        self.nodes: List[WNTREPANETNode] = []
+        self.links: List[WNTREPANETLink] = []
+        self.sources: List[WNTREPANETSource] = []
+        self.controls: List[WNTREPANETControl] = []
 
     @staticmethod
     def enforce_unique(ordered_pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
-        """Enforce unique keys in JSON by flagging duplicates.
-        
-        This method is used as an object_pairs_hook during JSON parsing to detect
-        and handle duplicate keys. Duplicate keys are renamed with a special marker
-        to prevent silent data loss.
-        
-        Args:
-            ordered_pairs: List of (key, value) tuples from JSON parsing.
-        
-        Returns:
-            Dictionary with unique keys, duplicates flagged with special prefix.
+        """Decode a JSON object, flagging duplicate keys instead of dropping them.
+
+        Parameters
+        ----------
+        ordered_pairs : List[Tuple[str, Any]]
+            Key-value pairs as produced by the JSON decoder, in document
+            order.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The object, with any repeated key renamed to
+            ``__WNTREPANETParser_Duplicate_Key_NNN__:<key>`` so that no value
+            is lost.
+
+        Notes
+        -----
+        Python's JSON decoder keeps the last value for a repeated key, which
+        would hide a real defect in the source document. Flagging the duplicate
+        keeps it visible for validation to report.
         """
-        d: Dict[str, Any] = {}
-        sep = ':'
-        idx = 1
-        for k, v in ordered_pairs:
-            if k in d:
-                key = DUP_KEY_FLAG.format(idx=idx) + sep + k
-                d[key] = v
-                idx += 1
+        result: Dict[str, Any] = {}
+        index = 1
+        for key, value in ordered_pairs:
+            if key in result:
+                result[DUP_KEY_FLAG.format(idx=index) + ":" + key] = value
+                index += 1
             else:
-                d[k] = v
-        return d
+                result[key] = value
+        return result
 
-    def set_parser_ruleset(self, ruleset: str) -> None:
-        """Apply a specific ruleset to the parser.
-        
-        Dynamically loads and applies the specified ruleset, updating the
-        component type classes to use ruleset-specific implementations.
-        
-        Args:
-            ruleset: The key identifier of the ruleset to apply.
-        
-        Raises:
-            WNTREPANETParserException: If the specified ruleset key is not found.
+    def missing_keys(self) -> List[str]:
+        """Return the required top-level keys the document does not define.
+
+        Returns
+        -------
+        List[str]
+            Names of the missing keys, in the order they are declared in
+            :data:`REQUIRED_KEYS`. Empty when the document can be parsed.
         """
-        _rulesets = rulesets.get_rulesets_metadata()
-        if ruleset not in _rulesets:
-            raise WNTREPANETParserException(f"No ruleset with key: {ruleset}")
-        import importlib # pylint: disable=import-outside-toplevel
-        import epanetparser.epanettypes # pylint: disable=import-outside-toplevel
-        rulesets.set_active_ruleset(ruleset)
-        importlib.reload(epanetparser.epanettypes)
-        from epanetparser.core.epanettypes import ( # pylint: disable=import-outside-toplevel, redefined-outer-name, reimported, unused-import
-            WNTREPANETNetworkInfo,
-            WNTREPANETOptions,
-            WNTREPANETCurve,
-            WNTREPANETPattern,
-            WNTREPANETNode,
-            WNTREPANETLink,
-            WNTREPANETSource,
-            WNTREPANETControl,
-        )
-        globals()["WNTREPANETNetworkInfo"] = WNTREPANETNetworkInfo
-        globals()["WNTREPANETOptions"] = WNTREPANETOptions
-        globals()["WNTREPANETCurve"] = WNTREPANETCurve
-        globals()["WNTREPANETPattern"] = WNTREPANETPattern
-        globals()["WNTREPANETNode"] = WNTREPANETNode
-        globals()["WNTREPANETLink"] = WNTREPANETLink
-        globals()["WNTREPANETSource"] = WNTREPANETSource
-        globals()["WNTREPANETControl"] = WNTREPANETControl
-
+        return [key for key in REQUIRED_KEYS if key not in self.src]
 
     def parse(
         self,
         raise_on_error: bool = False,
         raise_on_warning: bool = False,
-        ignore_warnings: bool = False
+        ignore_warnings: bool = False,
     ) -> None:
-        """Parse the WNTR JSON network definition.
-        
-        Parses all components of the EPANET network model and validates them
-        against the active ruleset. Errors and warnings are collected in the
-        parser's errors and warnings attributes.
-        
-        The parsing process handles the following components in order:
-        1. Network metadata (name, version, comments)
-        2. Simulation options
-        3. Curves
-        4. Patterns
-        5. Nodes (junctions, tanks, reservoirs)
-        6. Links (pipes, pumps, valves)
-        7. Sources
-        8. Controls
-        
-        Args:
-            raise_on_error: If True, raise validation errors immediately as exceptions
-                          rather than collecting them.
-            raise_on_warning: If True, raise warnings immediately as exceptions
-                            rather than collecting them.
-            ignore_warnings: If True, suppress all warning processing.
+        """Build the model from the decoded document.
+
+        Parameters
+        ----------
+        raise_on_error : bool
+            If True, raise the first structural problem instead of collecting
+            it in :attr:`errors`.
+        raise_on_warning : bool
+            Accepted for compatibility. The parser produces no warnings, so
+            this has no effect.
+        ignore_warnings : bool
+            Accepted for compatibility and has no effect, for the same
+            reason.
+
+        Raises
+        ------
+        WNTREPANETParserException
+            If a required top-level key is missing, or if any collection is not
+            a list of objects and ``raise_on_error`` is True.
+
+        Notes
+        -----
+        Components are stored in document order and are not deduplicated or
+        reordered. A component whose fields are unusable is still constructed:
+        what counts as usable is a question for validation, and answering it
+        here would make parsing and validation inseparable.
         """
-        seen_nodes: set = set()
-        seen_links: set = set()
+        self._raise_on_error = raise_on_error
+        absent = self.missing_keys()
+        if absent:
+            message = f"Missing required key(s) in network document: {', '.join(absent)}"
+            if raise_on_error:
+                raise WNTREPANETParserException(message) from None
+            self.errors.setdefault("network", []).append(
+                WNTREPANETParserException(message)
+            )
+            return
 
-        # Create partial function with fixed arguments for the context manager
-        component_exc_capture = partial(
-            raiseorpush,
-            raise_error=raise_on_error,
-            raise_warning=raise_on_warning,
-            ignore_warnings=ignore_warnings,
-            dest=self
+        self.network_info = WNTREPANETNetworkInfo(
+            {key: self.src[key] for key in METADATA_KEYS if key in self.src}
         )
+        self.options = WNTREPANETOptions(self.src["options"])
+        self.curves = [
+            WNTREPANETCurve(item) for item in self._records("curves", WNTREPANETCurve)
+        ]
+        self.patterns = [
+            WNTREPANETPattern(item)
+            for item in self._records("patterns", WNTREPANETPattern)
+        ]
+        self.nodes = [
+            WNTREPANETNode(item) for item in self._records("nodes", WNTREPANETNode)
+        ]
+        self.links = [
+            WNTREPANETLink(item) for item in self._records("links", WNTREPANETLink)
+        ]
+        self.sources = [
+            WNTREPANETSource(item) for item in self._records("sources", WNTREPANETSource)
+        ]
+        self.controls = [
+            WNTREPANETControl(item)
+            for item in self._records("controls", WNTREPANETControl)
+        ]
 
-        # 1. Parse network information (metadata)
-        network_dict = {
-            key: value for key, value in self.src.items()
-            if key in ("version", "comment", "name")
-        }
-        with component_exc_capture("network_info") as cc:
-            network_info = WNTREPANETNetworkInfo(network_dict)
-            cc.capture_warnings(network_info)
-            self.network_info = network_info
+    def _structural_error(self, key: str, message: str) -> None:
+        """Record a structural problem, or raise it, per ``raise_on_error``."""
+        if self._raise_on_error:
+            raise WNTREPANETParserException(message) from None
+        self.errors.setdefault(key, []).append(WNTREPANETParserException(message))
 
-        # 2. Parse network options
-        options_dict = self.src["options"]
-        with component_exc_capture("options") as cc:
-            options = WNTREPANETOptions(options_dict)
-            cc.capture_warnings(options)
-            self.options = options
+    def _records(
+        self,
+        key: str,
+        factory: type,
+    ) -> List[Dict[str, Any]]:
+        """Return the object records of a collection, or an empty list.
 
-        # 3. Parse curves data
-        for curve_dict in self.src.get("curves", []):
-            with component_exc_capture("curves") as cc:
-                wntr_curve = WNTREPANETCurve(curve_dict)
-                cc.capture_warnings(wntr_curve)
-                self.curves.append(wntr_curve)
+        Parameters
+        ----------
+        key : str
+            Top-level key to read.
+        factory : type
+            Component class the records are for, used in the error message.
 
-        # 4. Parse patterns data
-        for pattern_dict in self.src.get("patterns", []):
-            with component_exc_capture("patterns") as cc:
-                wntr_pattern = WNTREPANETPattern(pattern_dict)
-                cc.capture_warnings(wntr_pattern)
-                self.patterns.append(wntr_pattern)
-
-        # 5. Parse nodes
-        for node_dict in self.src["nodes"]:
-            with component_exc_capture("nodes") as cc:
-                node = WNTREPANETNode(node_dict)
-                cc.capture_warnings(node)
-                if node.name in seen_nodes:
-                    self.errors["network"].append(
-                        WNTREPANETNetworkValidationError(f"Duplicate node name <{node.name}>")
-                    )
-                else:
-                    self.nodes.append(node)
-                    seen_nodes.add(node.name)
-
-        # 6. Parse links
-        for link_dict in self.src["links"]:
-            with component_exc_capture("links") as cc:
-                link = WNTREPANETLink(link_dict)
-                cc.capture_warnings(link)
-                if link.name in seen_links:
-                    self.errors["network"].append(
-                        WNTREPANETNetworkValidationError(f"Duplicate link name <{link.name}>")
-                    )
-                else:
-                    self.links.append(link)
-                    seen_links.add(link.name)
-
-        # 7. Parse sources
-        for source_dict in self.src.get("sources", []):
-            with component_exc_capture("sources") as cc:
-                wntr_source = WNTREPANETSource(source_dict)
-                cc.capture_warnings(wntr_source)
-                self.sources.append(wntr_source)
-
-        # 8. Parse controls
-        for control_dict in self.src.get("controls", []):
-            with component_exc_capture("controls") as cc:
-                wntr_control = WNTREPANETControl(control_dict)
-                cc.capture_warnings(wntr_control)
-                self.controls.append(wntr_control) 
-
+        Returns
+        -------
+        List[Dict[str, Any]]
+            The collection's records, or an empty list when the key is absent
+            or the collection is structurally wrong.
+        """
+        raw: Optional[Any] = self.src.get(key)
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            self._structural_error(
+                key,
+                f"Key '{key}' must be a list of "
+                f"{factory.__name__} objects, found {type(raw).__name__}",
+            )
+            return []
+        records: List[Dict[str, Any]] = []
+        for position, item in enumerate(raw):
+            if not isinstance(item, dict):
+                self._structural_error(
+                    key,
+                    f"Key '{key}' entry {position} must be an object, "
+                    f"found {type(item).__name__}",
+                )
+                return []
+            records.append(item)
+        return records
 
     @property
     def has_errors(self) -> bool:
-        """Check if any validation errors were encountered.
-
-        Returns:
-            True if parsing errors are present, False otherwise.
-        """
-        return len(self.errors) > 0
+        """True if any structural problem was recorded."""
+        return bool(self.errors)
 
     @property
     def has_warnings(self) -> bool:
-        """Check if any validation warnings were generated.
+        """True if any structural warning was recorded.
 
-        Returns:
-            True if parsing warnings are present, False otherwise.
+        Notes
+        -----
+        Always False: the parser produces no warnings. Non-fatal findings are
+        validation issues, and are reported by
+        :attr:`~epanetparser.core.validation.results.ValidationReport.warnings`.
         """
-        return len(self.warnings) > 0
+        return bool(self.warnings)

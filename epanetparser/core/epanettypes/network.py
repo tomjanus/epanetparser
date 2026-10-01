@@ -1,237 +1,121 @@
-"""EPANET network representation and statistics.
+"""The EPANET network: a container of components with a name index.
 
-This module provides classes for representing and analyzing EPANET water
-distribution networks using the WNTR (Water Network Tool for Resilience) parser.
+A network holds the model's component collections and the metadata that
+describes them. It knows nothing about validity: constructing one succeeds
+whatever the components contain. What a model means is a separate question,
+answered by :meth:`WNTREPANETNetwork.validate`.
 
-Classes
+Loading
 -------
-WNTRNetworkStatistics
-    Computes detailed statistics about network components.
-WNTREPANETNetwork
-    Main network representation with nodes, links, and other components.
+:meth:`WNTREPANETNetwork.from_file` and :meth:`WNTREPANETNetwork.from_json`
+read a model from an ``.inp`` or WNTR ``.json`` file. ``.inp`` files are
+converted to WNTR's JSON representation with WNTR itself first; this module
+does not implement an INP grammar.
+
+Validation
+----------
+:meth:`WNTREPANETNetwork.validate` runs the rules of the selected rulesets
+against every component and then against the network as a whole. It returns a
+:class:`~epanetparser.core.validation.results.ValidationReport` and never
+raises for a rule failure.
 
 Examples
 --------
-Load a network from an .inp file::
+Load and validate a model::
 
-    network, errors, warnings = WNTREPANETNetwork.from_file("network.inp")
-    if network:
-        print(network.report())
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 
-Load from JSON::
+    network, errors, warnings = WNTREPANETNetwork.from_file("Net1.inp")
+    report = network.validate()
+    if not report.is_valid:
+        for issue in report.errors:
+            print(issue.code, issue.component_name, issue.message)
 
-    network, errors, warnings = WNTREPANETNetwork.from_json(json_string)
+See Also
+--------
+epanetparser.core.parsers.wntrjsonparser : Builds the model; validates nothing.
+epanetparser.core.validation : Rule execution and structured results.
 """
 from __future__ import annotations
-import pathlib
-from typing import Dict, List, Tuple, Any
-from collections import defaultdict
-import logging
+
 import json
-import wntr
+import logging
+import pathlib
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
 from epanetparser.core.parsers.wntrjsonparser import WNTRJSONParser
-from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException       
+from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException
+from epanetparser.core.validation import (
+    NetworkIndex,
+    ValidationReport,
+    Validator,
+)
 
 log = logging.getLogger(__name__)
 
 
-class WNTRNetworkStatistics:
-    """Compute ds.
-    
-    This class provides methods to analyze network components by type,
-    generating detailed counts and breakdowns of nodes, links, curves,
-    patterns, sources, and controls.
-    
-    Parameters
-    ----------
-    network : WNTREPANETNetwork
-        The network instance to analyze.
-    
-    Attributes
-    ----------
-    component_typefield_map : Dict[str, str|None]
-        Maps component names to their type field names.
-    network : WNTREPANETNetwork
-        The network being analyzed.
-    
-    Examples
-    --------
-    >>> stats = WNTRNetworkStatistics(network)
-    >>> report = stats.report()
-    >>> print(report['nodes'])
-    10
-    """
-    component_typefield_map: Dict[str, str|None] = {
-        "nodes": "node_type",
-        "links": "link_type",
-        "sources" : None,
-        "curves" : "curve_type",
-        "patterns": None,
-        "controls": "type"}
-
-    def __init__(self, network: WNTREPANETNetwork):
-        """Initialize statistics analyzer.
-        
-        Parameters
-        ----------
-        network : WNTREPANETNetwork
-            The network to analyze.
-        """
-        self.network = network
-
-    def get_component_types(self, component_name: str) -> List[str]:
-        """Get unique component types for a given component category.
-        
-        Parameters
-        ----------
-        component_name : str
-            Name of component category (e.g., 'nodes', 'links').
-        
-        Returns
-        -------
-        List[str]
-            List of unique component types found.
-        
-        Examples
-        --------
-        >>> stats.get_component_types('nodes')
-        ['Junction', 'Reservoir', 'Tank']
-        """
-        component_types: List[str] = []
-        type_field: str | None = self.component_typefield_map[component_name]
-        store = getattr(self.network, component_name)
-        if type_field is None:
-            return []
-        for component in store:
-            if component[type_field] not in component_types:
-                component_types.append(component[type_field])
-        return component_types
-
-    def get_number_of_components(self, component_name: str, component_type: str|None = None) -> int:
-        """Count components, optionally filtered by type.
-        
-        Parameters
-        ----------
-        component_name : str
-            Name of component category (e.g., 'nodes', 'links').
-        component_type : str, optional
-            Specific type to filter by (e.g., 'Pipe', 'Junction').
-        
-        Returns
-        -------
-        int
-            Number of matching components.
-        
-        Examples
-        --------
-        >>> stats.get_number_of_components('nodes')
-        10
-        >>> stats.get_number_of_components('nodes', 'Junction')
-        7
-        """
-        # BUG FIX: Changed from self to self.network
-        store = getattr(self.network, component_name)
-        if component_type is not None:
-            count = len(
-                [item for item in store if 
-                 item[self.component_typefield_map[component_name]] == component_type])
-        else:
-            count = len(store)
-        return count
-
-    def report(self) -> Dict[str, int]:
-        """Generate detailed component statistics report.
-        
-        Returns
-        -------
-        Dict[str, int]
-            Dictionary with component counts, including breakdowns by type.
-            Keys include base component names (e.g., 'nodes') and typed
-            components (e.g., 'nodes type Junction').
-        
-        Examples
-        --------
-        >>> report = stats.report()
-        >>> print(report)
-        {'nodes': 10, 'nodes type Junction': 7, 'nodes type Tank': 2, ...}
-        """
-        report: Dict[str, int] = {}
-        components = self.component_typefield_map.keys()
-        for component in components:
-            component_types = self.get_component_types(component)
-            if (count := self.get_number_of_components(component)) > 0:
-                report[component] = count
-            if len(component_types) > 0:
-                for component_type in component_types:
-                    key_name = component + " type " + component_type
-                    report[key_name] = self.get_number_of_components(component, component_type)
-        return report
-
-
 class WNTREPANETNetwork:
-    """EPANET water distribution network representation.
-    
-    An abstract representation of an EPANET network pre-parsed by the 
-    USEPA WNTR (Water Network Tool for Resilience) package.
-    
-    This class provides methods to load, validate, and analyze EPANET
-    networks from .inp or .json files.
-    
+    """An EPANET water distribution network.
+
     Parameters
     ----------
     parser : WNTRJSONParser
-        A parser instance containing the parsed network data.
-    
+        Parser that has already produced the model's components.
+
     Attributes
     ----------
-    network_info : NetworkInfo
-        Basic network metadata (name, comment, version).
-    options : Options
-        Network simulation options and settings.
-    curves : List
-        Performance curves (pump curves, efficiency curves, etc.).
-    patterns : List
-        Time-based demand/source patterns.
-    nodes : List
-        Network nodes (junctions, tanks, reservoirs).
-    links : List
-        Network links (pipes, pumps, valves).
-    sources : List
-        Water quality sources.
-    controls : List
-        Simple and rule-based controls.
-    
+    network_info : WNTREPANETNetworkInfo
+        Model metadata: name, comment, version, references.
+    options : WNTREPANETOptions
+        Simulation options.
+    curves : List[WNTREPANETCurve]
+        Curves, in document order.
+    patterns : List[WNTREPANETPattern]
+        Patterns, in document order.
+    nodes : List[WNTREPANETNode]
+        Nodes, in document order.
+    links : List[WNTREPANETLink]
+        Links, in document order.
+    sources : List[WNTREPANETSource]
+        Water quality sources, in document order.
+    controls : List[WNTREPANETControl]
+        Controls, in document order.
+    index : NetworkIndex
+        Name-to-component index, built on first use. Network rules resolve
+        references through it.
+
+    Notes
+    -----
+    The component collections are plain lists in document order. They are not
+    keyed by name, because a model may contain duplicate names, and collapsing
+    them here would hide exactly the defect that validation needs to report.
+
     Examples
     --------
-    Load from a file::
-    
-        network, errors, warnings = WNTREPANETNetwork.from_file("Net1.inp")
-        if network:
-            print(f"Network: {network.name}")
-            print(network.report())
-    
-    Access network components::
-    
-        for node in network.nodes:
-            print(node.name, node.node_type)
-    
-    See Also
-    --------
-    WNTRJSONParser : Parser for WNTR JSON format
-    WNTRNetworkStatistics : Detailed network statistics
-    
-    References
-    ----------
-    .. [1] https://github.com/USEPA/WNTR
+    >>> network = WNTREPANETNetwork(parser)   # doctest: +SKIP
+    >>> network.report()                     # doctest: +SKIP
+    {'nodes': 11, 'links': 13, 'patterns': 2}
+    >>> network.validate().is_valid          # doctest: +SKIP
+    True
     """
 
-    def __init__(self, parser: WNTRJSONParser):
-        """Initialize network from parser.
-        
+    #: Component collections, in the order they are reported and validated.
+    COMPONENT_COLLECTIONS: Tuple[str, ...] = (
+        "curves",
+        "patterns",
+        "nodes",
+        "links",
+        "sources",
+        "controls",
+    )
+
+    def __init__(self, parser: WNTRJSONParser) -> None:
+        """Take the components a parser produced.
+
         Parameters
         ----------
         parser : WNTRJSONParser
-            Parser containing the network data.
+            Parser whose :meth:`~WNTRJSONParser.parse` has already run.
         """
         self.network_info = parser.network_info
         self.options = parser.options
@@ -241,517 +125,483 @@ class WNTREPANETNetwork:
         self.links = parser.links
         self.sources = parser.sources
         self.controls = parser.controls
+        self.index: Optional[NetworkIndex] = None
 
+    # ------------------------------------------------------------------
+    # Loading
+    # ------------------------------------------------------------------
     @classmethod
     def from_file(
-            cls,
-            filename: str | pathlib.Path,
-            raise_on_parser_error=False,
-            raise_on_parser_warning=False,
-            ignore_warnings=False,
-            ruleset=None) -> Tuple[WNTREPANETNetwork, None, defaultdict]:
-        """Load network from .inp or .json file.
-        
-        Reads an EPANET network from a file. Supports both .inp (EPANET input)
-        and .json (WNTR JSON) formats. The .inp files are automatically converted
-        to JSON using WNTR before parsing.
-        
+        cls,
+        filename: str | pathlib.Path,
+        raise_on_parser_error: bool = False,
+        raise_on_parser_warning: bool = False,
+        ignore_warnings: bool = False,
+    ) -> Tuple[Optional["WNTREPANETNetwork"], Optional[Dict], Optional[Dict]]:
+        """Load a network from an ``.inp`` or WNTR ``.json`` file.
+
         Parameters
         ----------
         filename : str or pathlib.Path
-            Path to the network file (.inp or .json).
-        raise_on_parser_error : bool, default=False
-            If True, raise exceptions on parsing errors. If False, return
-            errors in the errors dictionary.
-        raise_on_parser_warning : bool, default=False
-            If True, raise exceptions on warnings. If False, collect warnings
-            in the warnings dictionary.
-        ignore_warnings : bool, default=False
-            If True, skip warning checks entirely.
-        ruleset : str, optional
-            Key of a validation ruleset to apply during parsing.
-        
+            Path to the model. ``.inp`` files are converted to WNTR's JSON
+            representation with WNTR before being parsed.
+        raise_on_parser_error : bool
+            If True, raise a structural parsing problem instead of returning
+            it. Rule failures are not involved: nothing is validated here.
+        raise_on_parser_warning : bool
+            Accepted for compatibility. The parser produces no warnings.
+        ignore_warnings : bool
+            Accepted for compatibility. The parser produces no warnings.
+
         Returns
         -------
         network : WNTREPANETNetwork or None
-            The parsed network, or None if errors occurred.
+            The parsed model, or None if the document could not be parsed.
         errors : dict or None
-            Dictionary of parsing errors, or None if no errors.
-        warnings : defaultdict or None
-            Dictionary of warnings, or None if no warnings.
-        
+            Structural problems, grouped by collection, or None if there were
+            none.
+        warnings : dict or None
+            Always None. The parser produces no warnings; non-fatal findings
+            come from :meth:`validate`.
+
         Raises
         ------
         WNTREPANETParserException
-            If raise_on_parser_error=True and parsing fails.
-        
+            If the file cannot be read or parsed and
+            ``raise_on_parser_error`` is True.
+
         Examples
         --------
-        Load a network with error handling::
-        
-            network, errors, warnings = WNTREPANETNetwork.from_file(
-                "network.inp",
-                raise_on_parser_error=False
-            )
-            
-            if errors:
-                print("Errors:", errors)
-            elif network:
-                print(f"Loaded: {network.name}")
-                if warnings:
-                    print("Warnings:", warnings)
-        
-        Load with strict validation::
-        
-            try:
-                network, _, _ = WNTREPANETNetwork.from_file(
-                    "network.inp",
-                    raise_on_parser_error=True,
-                    raise_on_parser_warning=True
-                )
-            except WNTREPANETParserException as e:
-                print(f"Validation failed: {e}")
+        >>> network, errors, _ = WNTREPANETNetwork.from_file("Net1.inp")
+        >>> report = network.validate()   # doctest: +SKIP
         """
-        filename = pathlib.Path(filename)
-        file_extension = filename.suffix
+        path = pathlib.Path(filename)
         try:
-            if file_extension.lower() == ".inp":
-                # Convert the inp file to its json representation using WNTR
-                network = wntr.network.WaterNetworkModel(filename.as_posix())
-                json_src = json.dumps(wntr.network.to_dict(network))
-            else:
-                with open(filename, 'r', encoding='utf-8') as fp:
-                    json_src = fp.read()
-        except (FileNotFoundError, OSError) as err:
-            err_txt = f"Unable to read input file: {err}"
-            #log.error(err_txt)
-            exc = WNTREPANETParserException(err_txt)
+            json_src = _to_json_source(path)
+        except (FileNotFoundError, OSError, ValueError) as err:
+            message = f"Unable to read input file: {err}"
             if raise_on_parser_error:
-                raise exc from None
-            return None, {"network": [exc]}, None
+                raise WNTREPANETParserException(message) from None
+            return None, {"network": [WNTREPANETParserException(message)]}, None
+        return cls.from_json(
+            json_src,
+            raise_on_parser_error=raise_on_parser_error,
+            raise_on_parser_warning=raise_on_parser_warning,
+            ignore_warnings=ignore_warnings,
+        )
+
+    @classmethod
+    def from_json(
+        cls,
+        json_src: str,
+        raise_on_parser_error: bool = False,
+        raise_on_parser_warning: bool = False,
+        ignore_warnings: bool = False,
+    ) -> Tuple[Optional["WNTREPANETNetwork"], Optional[Dict], Optional[Dict]]:
+        """Load a network from a WNTR JSON string.
+
+        Parameters
+        ----------
+        json_src : str
+            JSON-encoded text of an EPANET model in WNTR's format.
+        raise_on_parser_error : bool
+            If True, raise a structural parsing problem instead of returning
+            it.
+        raise_on_parser_warning : bool
+            Accepted for compatibility. The parser produces no warnings.
+        ignore_warnings : bool
+            Accepted for compatibility. The parser produces no warnings.
+
+        Returns
+        -------
+        network : WNTREPANETNetwork or None
+            The parsed model, or None if the document could not be parsed.
+        errors : dict or None
+            Structural problems, grouped by collection, or None if there were
+            none.
+        warnings : dict or None
+            Always None.
+
+        Raises
+        ------
+        WNTREPANETParserException
+            If the text is not valid JSON, a required key is missing, or
+            ``raise_on_parser_error`` is True and a structural problem occurs.
+
+        Notes
+        -----
+        A model that parses successfully may still be invalid. Check the result
+        of :meth:`validate` for that.
+
+        Examples
+        --------
+        >>> network, errors, _ = WNTREPANETNetwork.from_json(json_text)
+        >>> network.validate().is_valid   # doctest: +SKIP
+        False
+        """
         try:
-            parser = WNTRJSONParser(json_src, ruleset)
+            parser = WNTRJSONParser(json_src)
         except WNTREPANETParserException as exc:
             if raise_on_parser_error:
                 raise exc from None
             return None, {"network": [exc]}, None
-
-        parser.parse(raise_on_error=raise_on_parser_error,
-                     raise_on_warning=raise_on_parser_warning,
-                     ignore_warnings=ignore_warnings)
-        ret_warnings = parser.warnings if parser.has_warnings else None
+        parser.parse(
+            raise_on_error=raise_on_parser_error,
+            raise_on_warning=raise_on_parser_warning,
+            ignore_warnings=ignore_warnings,
+        )
+        warnings = dict(parser.warnings) if parser.has_warnings else None
         if parser.has_errors:
-            return None, parser.errors, ret_warnings
-            return cls(parser), None, parser.warnings
+            return None, dict(parser.errors), warnings
+        return cls(parser), None, warnings
 
-    @classmethod
-    def from_json(cls, json_src, raise_on_parser_error=False,
-                  raise_on_parser_warning=False, ignore_warnings=False,
-                  ruleset=None) -> Tuple[WNTREPANETNetwork, None, defaultdict]:
-        """Load network from JSON string.
-        
-        Parse an EPANET network from a JSON-encoded string in WNTR format.
-        
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+    def build_index(self) -> NetworkIndex:
+        """Return the network's name index, building and caching it if needed.
+
+        Returns
+        -------
+        NetworkIndex
+            Name-to-component index of this network.
+
+        Notes
+        -----
+        The index is cached on the instance and reused by
+        :meth:`validate`. Call :meth:`invalidate_index` after modifying a
+        component collection, or the index will describe the model as it was
+        when first built.
+        """
+        if self.index is None:
+            self.index = NetworkIndex(self)
+        return self.index
+
+    def invalidate_index(self) -> None:
+        """Discard the cached name index so the next use rebuilds it."""
+        self.index = None
+
+    def validate(self, context: Any = None) -> ValidationReport:
+        """Validate the whole model.
+
         Parameters
         ----------
-        json_src : str
-            JSON-encoded string representing the network.
-        raise_on_parser_error : bool, default=False
-            If True, raise exceptions on parsing errors.
-        raise_on_parser_warning : bool, default=False
-            If True, raise exceptions on warnings.
-        ignore_warnings : bool, default=False
-            If True, skip warning checks.
-        ruleset : str, optional
-            Key of a validation ruleset to apply.
-        
+        context : Any
+            Rule set selection. Anything
+            :meth:`~epanetparser.core.validation.engine.ValidationContext.from_any`
+            accepts. Defaults to the core ruleset alone; pass a custom ruleset
+            to apply application-specific constraints as well.
+
         Returns
         -------
-        network : WNTREPANETNetwork or None
-            The parsed network, or None if errors occurred.
-        errors : dict or None
-            Dictionary of parsing errors, or None if no errors.
-        warnings : defaultdict or None
-            Dictionary of warnings, or None if no warnings.
-        
+        ValidationReport
+            Component issues in component order, followed by network issues.
+            Check :attr:`~epanetparser.core.validation.results.ValidationReport.is_valid`.
+
+        Notes
+        -----
+        This method contains no rule logic; it delegates to the engine, which
+        selects rules by class name. Custom rulesets therefore apply to this
+        class without it knowing they exist.
+
+        Raises
+        ------
+        RuleSetSelectionError
+            If ``context`` names a rule set that has not been discovered, or
+            does not select exactly one core rule set.
+        RuleExecutionError
+            If a selected rule raises an exception other than
+            ``AssertionError``, which indicates a defect in the rule.
+
         Examples
         --------
-        >>> import json
-        >>> json_str = json.dumps(network_dict)
-        >>> network, errors, warnings = WNTREPANETNetwork.from_json(json_str)
+        >>> from epanetparser.core.validation import ValidationContext
+        >>> network.validate().is_valid
+        True
+        >>> network.validate(ValidationContext(custom=["milp"])).is_valid
+        False
         """
-        parser = WNTRJSONParser(json_src, ruleset=ruleset)
-        parser.parse(raise_on_error=raise_on_parser_error,
-                     raise_on_warning=raise_on_parser_warning,
-                     ignore_warnings=ignore_warnings)
-        ret_warnings = parser.warnings if parser.has_warnings else None
-        if parser.has_errors:
-            return None, parser.errors, ret_warnings
-        return cls(parser), None, parser.warnings
+        return Validator.from_context(context, registry=_context_registry(context)).validate(
+            self, index=self.build_index()
+        )
 
-
+    # ------------------------------------------------------------------
+    # Reporting and serialisation
+    # ------------------------------------------------------------------
     def as_dict(self) -> Dict[str, Any]:
-        """Convert network to dictionary representation.
-        
+        """Return the model as a dictionary in WNTR's JSON shape.
+
         Returns
         -------
-        dict
-            Dictionary containing all network components and metadata.
-            Includes network_info, options, curves, patterns, nodes,
-            links, sources, and controls.
-        
-        Examples
-        --------
-        >>> network_dict = network.as_dict()
-        >>> print(network_dict.keys())
-        dict_keys(['name', 'options', 'nodes', 'links', ...])
+        Dict[str, Any]
+            Metadata, options and every component collection. Empty
+            collections are omitted except for ``patterns``, so that a
+            round trip preserves the distinction WNTR makes.
         """
         network = self.network_info.as_dict()
         network["options"] = self.options.as_dict()
-        if len(self.curves) > 0:
-            network["curves"] = [curve.as_dict() for curve in self.curves]
-        network["patterns"] = [pattern.as_dict() for pattern in self.patterns]
-        network["nodes"] = [node.as_dict() for node in self.nodes]
-        network["links"] = [link.as_dict() for link in self.links]
-        network["sources"] = [source.as_dict() for source in self.sources]
-        network["controls"] = [control.as_dict() for control in self.controls]
+        for collection in self.COMPONENT_COLLECTIONS:
+            components = getattr(self, collection)
+            if components or collection == "patterns":
+                network[collection] = [item.as_dict() for item in components]
         return network
 
+    def as_json(self, indent: Optional[int] = 2) -> str:
+        """Return the model as a JSON string in WNTR's JSON shape.
 
-    def as_json(self) -> str:
-        """Return a JSON encoded representation of the WNTREPANETNetwork.
-        
-        Returns:
-            str: A JSON encoded representation of the :class:`WNTREPANETNetwork`
-                instance with 2-space indentation.
-        """
-        return json.dumps(self.as_dict(), indent=2)
+        Parameters
+        ----------
+        indent : Optional[int]
+            Number of spaces to indent by. Pass None for compact output.
 
-
-    def validate(self) -> None | NotImplemented:
-        """Perform network-level semantic validation.
-        
-        Currently unused placeholder for future validation features.
-        Potential validations include:
-        - Unconnected nodes
-        - Unused parameters
-        - Network topology checks
-        
         Returns
         -------
-        None or NotImplemented
-            Currently returns NotImplemented.
+        str
+            JSON text of :meth:`as_dict`.
         """
-        return NotImplemented
-
+        return json.dumps(self.as_dict(), indent=indent)
 
     def report(self) -> Dict[str, int]:
-        """Generate summary report of network components.
-        
-        Provides basic counts of major network components.
-        
+        """Return the number of components in each collection.
+
         Returns
         -------
-        dict
-            Dictionary with component counts. Keys include 'nodes', 'links',
-            and optionally 'curves', 'patterns', 'sources', 'controls'
-            (only if count > 0).
-        
-        Examples
-        --------
-        >>> report = network.report()
-        >>> print(f"Nodes: {report['nodes']}, Links: {report['links']}")
-        Nodes: 11, Links: 13
-        
-        See Also
-        --------
-        verbose_report : More detailed report with formatted output
+        Dict[str, int]
+            Component counts. ``nodes`` and ``links`` are always present; the
+            remaining collections appear only when non-empty.
         """
         report = {
             "nodes": len(self.nodes),
-            "links": len(self.links)
+            "links": len(self.links),
         }
-        components = ("curves", "patterns", "sources", "controls")
-        for component in components:
-            store = getattr(self, component)
-            if (count := len(store)) > 0:
-                report[component] = count
+        for collection in self.COMPONENT_COLLECTIONS:
+            if collection in report:
+                continue
+            count = len(getattr(self, collection))
+            if count:
+                report[collection] = count
         return report
 
-
     def verbose_report(self) -> Dict[str, int]:
-        """Generate verbose report with capitalized component names.
-        
+        """Return :meth:`report` with capitalised collection names.
+
         Returns
         -------
-        dict
-            Dictionary with component counts, keys capitalized.
-        
-        Examples
-        --------
-        >>> report = network.verbose_report()
-        >>> print(report)
-        {'Nodes': 11, 'Links': 13, 'Patterns': 2}
+        Dict[str, int]
+            Component counts keyed by capitalised collection name.
         """
-        report = self.report()
-        rep_lines = {}
-        for component, count in report.items():
-            rep_lines[component.capitalize()] = count
-        return rep_lines
+        return {key.capitalize(): count for key, count in self.report().items()}
 
+    def component(self, collection: str, name: str) -> Optional[Any]:
+        """Return a component by collection and name.
+
+        Parameters
+        ----------
+        collection : str
+            Collection to look in, for example ``"nodes"``.
+        name : str
+            Name of the component.
+
+        Returns
+        -------
+        Any or None
+            The component, or None if the collection has no component with
+            that name. Duplicate names resolve to the first, which is why
+            validation reports duplicates separately.
+        """
+        return self.build_index().collection(collection).get(name)
 
     @property
     def name(self) -> str:
-        """Network name.
-        
-        Returns
-        -------
-        str
-            The network name from network_info.
-        """
-        if hasattr(self.network_info, 'name'):
-            return self.network_info.name
-        return self.network_info.get('name', 'Unnamed Network')
-
+        """Network name, or ``"Unnamed Network"`` if it has none."""
+        return self.network_info.name or "Unnamed Network"
 
     @property
     def comment(self) -> str:
-        """Network description/comment.
-        
-        Returns
-        -------
-        str
-            The network comment from network_info.
-        """
-        if hasattr(self.network_info, 'comment'):
-            return self.network_info.comment
-        return self.network_info.get('comment', '')
-    
+        """Network comment, or an empty string if it has none."""
+        return self.network_info.comment or ""
 
     @property
     def version(self) -> str:
-        """Network version.
-        
+        """Version of the tool that wrote the model, or an empty string."""
+        return self.network_info.version or ""
+
+
+def _context_registry(context: Any) -> Optional[Any]:
+    """Return the registry a context should resolve against, if it names one."""
+    from epanetparser.core.validation import ValidationContext
+
+    if isinstance(context, ValidationContext):
+        return context.registry
+    return None
+
+
+def _to_json_source(path: pathlib.Path) -> str:
+    """Return the WNTR JSON text of a model file.
+
+    Parameters
+    ----------
+    path : pathlib.Path
+        Path to an ``.inp`` or ``.json`` file.
+
+    Returns
+    -------
+    str
+        The file's JSON text. ``.inp`` files are converted with WNTR first.
+
+    Raises
+    ------
+    ValueError
+        If the file extension is neither ``.inp`` nor ``.json``.
+    OSError
+        If the file cannot be read.
+    """
+    if path.suffix.lower() == ".inp":
+        import wntr  # pylint: disable=import-outside-toplevel
+
+        model = wntr.network.WaterNetworkModel(path.as_posix())
+        return json.dumps(wntr.network.to_dict(model))
+    if path.suffix.lower() == ".json":
+        return path.read_text(encoding="utf-8")
+    raise ValueError(
+        f"Unsupported file extension '{path.suffix}'. Use .inp or .json"
+    )
+
+
+class WNTRNetworkStatistics:
+    """Counts components in a network, grouped by concrete type.
+
+    Parameters
+    ----------
+    network : WNTREPANETNetwork
+        Network to summarise.
+
+    Notes
+    -----
+    Unlike :meth:`WNTREPANETNetwork.report`, which counts whole collections,
+    this reports the breakdown by concrete type, for example ``Junction`` and
+    ``Tank`` within ``nodes``. It reads the components as dictionaries, so it
+    works on parser output but not on a model that stores components as
+    objects. See ``docs/TODO_MODEL_LAYER_DUPLICATION.md``.
+
+    Examples
+    --------
+    >>> stats = WNTRNetworkStatistics(network)   # doctest: +SKIP
+    >>> stats.report()                          # doctest: +SKIP
+    {'nodes': 11, 'nodes type Junction': 9, 'nodes type Tank': 1, ...}
+    """
+
+    #: Collection name to the data field holding its concrete type, or None
+    #: when the collection is not further subdivided.
+    component_typefield_map: Dict[str, Optional[str]] = {
+        "nodes": "node_type",
+        "links": "link_type",
+        "sources": None,
+        "curves": "curve_type",
+        "patterns": None,
+        "controls": "type",
+    }
+
+    def __init__(self, network: WNTREPANETNetwork) -> None:
+        """Store the network to summarise."""
+        self.network = network
+
+    def get_component_types(self, component_name: str) -> List[str]:
+        """Return the concrete types present in a collection.
+
+        Parameters
+        ----------
+        component_name : str
+            Collection name, for example ``"nodes"``.
+
         Returns
         -------
-        str
-            The network version from network_info.
+        List[str]
+            Concrete types, in the order first encountered. Empty for a
+            collection that is not subdivided.
         """
-        if hasattr(self.network_info, 'version'):
-            return self.network_info.version
-        return self.network_info.get('version', '')
-    
-    
-if __name__ == "__main__":
-    # Demonstration and testing of network loading functionality.
-    #
-    # This demo shows how to:
-    # - Load networks from different file formats (.inp and .json)
-    # - Handle parsing errors and warnings
-    # - Display network statistics
-    # - Access network components
-    #
-    # Usage:
-    #   Run with default example networks:
-    #     python network.py
-    #
-    #   Test a specific network file:
-    #     python network.py /path/to/your/network.inp
-    #
-    #   Test multiple files:
-    #     python network.py network1.inp network2.json network3.inp
-    
-    import sys
-    import os
-    
-    def print_separator(char='=', length=70):
-        """Print a visual separator line."""
-        print(char * length)
-    
-    def print_network_info(network: WNTREPANETNetwork):
-        """Display detailed information about a network.
-        
-        Parameters
-        ----------
-        network : WNTREPANETNetwork
-            The network to display.
-        """
-        print_separator()
-        print(f"NETWORK: {network.name}")
-        print_separator()
-        print(f"Version: {network.version}")
-        if network.comment:
-            print(f"Comment: {network.comment}")
-        print()
-        
-        # Basic report
-        print("BASIC REPORT:")
-        print("-" * 40)
-        report = network.report()
-        for component, count in sorted(report.items()):
-            print(f"  {component.ljust(20)}: {count}")
-        print()
-        
-        # Verbose report
-        print("VERBOSE REPORT:")
-        print("-" * 40)
-        verbose = network.verbose_report()
-        for component, count in sorted(verbose.items()):
-            print(f"  {component.ljust(20)}: {count}")
-        print()
-        
-        # Component details
-        if network.nodes:
-            print(f"SAMPLE NODES (showing first 3 of {len(network.nodes)}):")
-            print("-" * 40)
-            for i, node in enumerate(network.nodes[:3]):
-                node_dict = node.as_dict() if hasattr(node, 'as_dict') else node
-                node_name = node_dict.get('name', f'Node_{i}')
-                node_type = node_dict.get('node_type', 'Unknown')
-                print(f"  {node_name} ({node_type})")
-        print()
-        
-        if network.links:
-            print(f"SAMPLE LINKS (showing first 3 of {len(network.links)}):")
-            print("-" * 40)
-            for i, link in enumerate(network.links[:3]):
-                link_dict = link.as_dict() if hasattr(link, 'as_dict') else link
-                link_name = link_dict.get('name', f'Link_{i}')
-                link_type = link_dict.get('link_type', 'Unknown')
-                print(f"  {link_name} ({link_type})")
-        print()
-    
-    def test_network_file(filepath: str):
-        """Test loading a network file and display results.
-        
-        Parameters
-        ----------
-        filepath : str
-            Path to the network file.
-        """
-        print_separator('=')
-        print(f"TESTING: {filepath}")
-        print_separator('=')
-        if not os.path.exists(filepath):
-            print(f"❌ ERROR: File not found: {filepath}")
-            print()
-            return
-        print(f"📂 Loading network from: {filepath}")
-        print(f"   File size: {os.path.getsize(filepath)} bytes")
-        print()
-        try:
-            network, errors, warnings = WNTREPANETNetwork.from_file(
-                filepath,
-                raise_on_parser_error=False,
-                raise_on_parser_warning=False,
-                ignore_warnings=False
-            )
-            
-            if errors:
-                print("❌ PARSING ERRORS:")
-                print("-" * 40)
-                for error_type, error_list in errors.items():
-                    print(f"  {error_type}:")
-                    for error in error_list:
-                        print(f"    - {error}")
-                print()
-                return
-            
-            if warnings:
-                print("⚠️  WARNINGS:")
-                print("-" * 40)
-                for warn_type, warn_list in warnings.items():
-                    print(f"  {warn_type}:")
-                    for warning in warn_list[:5]:  # Show first 5 warnings
-                        print(f"    - {warning}")
-                    if len(warn_list) > 5:
-                        print(f"    ... and {len(warn_list) - 5} more")
-                print()
-            
-            if network:
-                print("✅ Network loaded successfully!")
-                print()
-                print_network_info(network)
-                
-                # Test JSON export
-                print("JSON EXPORT TEST:")
-                print("-" * 40)
-                try:
-                    json_str = network.as_json()
-                    print(f"  JSON length: {len(json_str)} characters")
-                    print(f"  JSON preview: {json_str[:100]}...")
-                    print("  ✅ JSON export successful")
-                except Exception as e:
-                    print(f"  ❌ JSON export failed: {e}")
-                print()
-        
-        except Exception as e:
-            print(f"❌ EXCEPTION: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            print()
-    
-    # Main demo execution
-    print_separator('=')
-    print("EPANET NETWORK LOADER - DEMONSTRATION")
-    print_separator('=')
-    print()
-    
-    # Determine which files to test
-    if len(sys.argv) > 1:
-        # User provided file paths
-        test_files = sys.argv[1:]
-        print(f"Testing {len(test_files)} user-specified file(s):")
-        for f in test_files:
-            print(f"  - {f}")
-        print()
-    else:
-        # Use example networks from the package
-        print("No files specified. Using built-in example networks.")
-        print("Usage: python network.py <path_to_network1> <path_to_network2> ...")
-        print()
-        
-        # Get the package directory
-        package_dir = pathlib.Path(__file__).parent.parent
-        networks_dir = package_dir / "networks"
-        
-        test_files = []
-        
-        # Try to find example networks
-        if (networks_dir / "test").exists():
-            test_valid = networks_dir / "test" / "test_valid_network.inp"
-            if test_valid.exists():
-                test_files.append(str(test_valid))
-        
-        if (networks_dir / "core").exists():
-            for net_file in ["Net1.inp", "Net2.inp", "Net3.inp"]:
-                net_path = networks_dir / "core" / net_file
-                if net_path.exists():
-                    test_files.append(str(net_path))
-                    break  # Just use one core network for demo
-        
-        if not test_files:
-            print("⚠️  No example networks found in package.")
-            print("Please specify a network file path as an argument.")
-            print()
-            print("Example:")
-            print("  python network.py /path/to/network.inp")
-            sys.exit(0)
-        
-        print(f"Found {len(test_files)} example network(s):")
-        for f in test_files:
-            print(f"  - {f}")
-        print()
-    
-    # Test each file
-    for i, filepath in enumerate(test_files):
-        test_network_file(filepath)
-        
-        if i < len(test_files) - 1:
-            print()
-            print()
-    
-    print_separator('=')
-    print("DEMO COMPLETE")
-    print_separator('=')
+        type_field = self.component_typefield_map.get(component_name)
+        store = self._records(component_name)
+        if type_field is None:
+            return []
+        component_types: List[str] = []
+        for component in store:
+            value = component.get(type_field)
+            if value is not None and value not in component_types:
+                component_types.append(value)
+        return component_types
 
+    def get_number_of_components(
+        self,
+        component_name: str,
+        component_type: Optional[str] = None,
+    ) -> int:
+        """Count components in a collection, optionally of one concrete type.
+
+        Parameters
+        ----------
+        component_name : str
+            Collection name, for example ``"nodes"``.
+        component_type : Optional[str]
+            Concrete type to count, for example ``"Junction"``. All components
+            in the collection are counted when omitted.
+
+        Returns
+        -------
+        int
+            Number of matching components.
+        """
+        store = self._records(component_name)
+        if component_type is None:
+            return len(store)
+        type_field = self.component_typefield_map.get(component_name)
+        if type_field is None:
+            return 0
+        return sum(1 for item in store if item.get(type_field) == component_type)
+
+    def report(self) -> Dict[str, int]:
+        """Return component counts, with a per-concrete-type breakdown.
+
+        Returns
+        -------
+        Dict[str, int]
+            Counts keyed by collection name, plus one ``"<collection> type
+            <type>"`` entry per concrete type present.
+        """
+        report: Dict[str, int] = {}
+        for collection in self.component_typefield_map:
+            component_types = self.get_component_types(collection)
+            count = self.get_number_of_components(collection)
+            if count:
+                report[collection] = count
+            for component_type in component_types:
+                report[f"{collection} type {component_type}"] = (
+                    self.get_number_of_components(collection, component_type)
+                )
+        return report
+
+    def _records(self, component_name: str) -> Sequence[Dict[str, Any]]:
+        """Return a collection's components as dictionaries.
+
+        Parameters
+        ----------
+        component_name : str
+            Collection name.
+
+        Returns
+        -------
+        Sequence[Dict[str, Any]]
+            The components' data dictionaries, or an empty sequence for an
+            unknown collection.
+        """
+        store = getattr(self.network, component_name, None)
+        if store is None:
+            return []
+        records: List[Dict[str, Any]] = []
+        for component in store:
+            data = component.get if isinstance(component, dict) else None
+            if data is None:
+                data = getattr(component, "data", None)
+            if isinstance(data, dict):
+                records.append(data)
+        return records

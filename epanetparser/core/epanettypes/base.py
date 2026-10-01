@@ -1,15 +1,17 @@
-"""Base classes for EPANET network component types.
+"""Base class for EPANET network component types.
 
-This module provides the abstract base class (`WNTREPANETType`) that serves as the
-foundation for all EPANET network component types including nodes, links, patterns,
-curves, controls, and other network`elements.
+Every EPANET component, whether it is a junction, a pipe, a pattern or the
+network options block, is a thin wrapper around the dictionary the parser
+produced. :class:`WNTREPANETType` provides that wrapper's contract: a ``data``
+attribute, read-only accessors for the fields a component is expected to have,
+serialisation, and a ``validate()`` entry point.
 
-The base class enforces a consistent interface across all component types, providing:
-
-- Automatic data validation through descriptor-based validation
-- Serialization to Python dict and JSON formats
-- Tracking of warnings for validation issues
-- Type identification through abstract property
+Validation is deliberately *not* part of assignment. ``component.data = ...``
+stores a dictionary; it never runs a rule and never raises a validation error.
+Rules live outside the model, in rule sets discovered by
+:mod:`epanetparser.core.validation`, and run only when ``validate()`` is
+called. This keeps parsing, validation and simulation separable, and it means
+custom rules can be added without subclassing or modifying these classes.
 
 Classes
 -------
@@ -18,252 +20,183 @@ WNTREPANETType
 
 Notes
 -----
-All concrete EPANET component classes must inherit from `WNTREPANETType` and
-implement the abstract `type` property to identify the component type.
-
-The `data` class attribute uses a descriptor pattern (`WNTREPANETTypeValidator`)
-to automatically validate component data according to defined schemas.
+Subclasses implement the abstract :attr:`WNTREPANETType.type` property to name
+the concrete component type, such as ``"Junction"`` or ``"Pipe"``.
 
 Examples
 --------
-Create a custom EPANET component type:
-
+>>> from epanetparser.core.epanettypes.base import WNTREPANETType
 >>> class Junction(WNTREPANETType):
 ...     @property
 ...     def type(self) -> str:
 ...         return "Junction"
-...
->>> junction = Junction()
->>> junction.data = {"elevation": 100.0, "demand": 50.0}
->>> junction.as_dict()
-{'elevation': 100.0, 'demand': 50.0}
+>>> junction = Junction({"name": "J1", "elevation": 100.0})
+>>> junction.type
+'Junction'
+>>> junction.validate().is_valid
+True
 
 See Also
 --------
-epanetparser.core.validation.WNTREPANETTypeValidator : Data validation descriptor
-epanetparser.core.epanettypes.node : Node component implementations
-epanetparser.core.epanettypes.link : Link component implementations
+epanetparser.core.validation : Rule execution and structured results.
+epanetparser.core.epanettypes.node : Node components.
+epanetparser.core.epanettypes.link : Link components.
 """
-from typing import Dict
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 import json
-from epanetparser.core.validation import WNTREPANETTypeValidator
+
+from epanetparser.core.validation import ValidationReport
 
 
 class WNTREPANETType(ABC):
-    """Abstract base class for all EPANET network component types.
-    
-    This class serves as the foundation for all EPANET network components, providing
-    a consistent interface for data storage, validation, serialization, and warning
-    management. All concrete component classes (Junction, Pipe, Pattern, etc.) must
-    inherit from this class.
-    
+    """Abstract base class for all EPANET network components.
+
+    A component owns a ``data`` dictionary and nothing else. Accessors are
+    derived from that dictionary so that the parser can hand over whatever the
+    source document contained, including fields this version of the parser
+    does not know about.
+
     Attributes
     ----------
-    data : WNTREPANETTypeValidator
-        Descriptor-based validator for storing and validating component data.
-        Automatically validates data against component-specific schemas when set.
-    warnings : list of str, optional
-        List of validation warning messages. Only present if validation warnings
-        were generated during data assignment or validation. Access via the
-        `has_warnings` property to check existence.
-    
+    data : Dict[str, Any]
+        The component's fields, exactly as parsed. Assignment is plain
+        attribute assignment and performs no validation.
+    component_kind : Optional[str]
+        Name of the component collection the component belongs to, for
+        example ``"nodes"``. Used when reporting issues against a network and
+        by the statistics helper; not required for validation, which selects
+        rules by class name.
+
     Methods
     -------
-    as_dict()
-        Convert component data to dictionary representation.
-    as_json()
-        Convert component data to JSON string representation.
-    
-    Properties
-    ----------
-    type : str
-        Abstract property that must be implemented by subclasses to identify
-        the component type (e.g., 'Junction', 'Pipe', 'Pattern').
-    has_warnings : bool
-        Check if the component has any validation warnings.
-    
+    validate
+        Run the selected validation rules against this component.
+    as_dict
+        Return the component's fields as a dictionary.
+    as_json
+        Return the component's fields as a JSON string.
+
     Notes
     -----
-    The `data` attribute uses a descriptor pattern to intercept attribute access
-    and automatically validate incoming data according to schemas defined in the
-    validation module.
-    
-    Subclasses must implement the abstract `type` property to provide a string
-    identifier for the component type.
-    
+    ``data`` is a plain attribute rather than a descriptor. Validation
+    results are returned by :meth:`validate` and are not cached on the
+    instance, so two calls with the same context return equal reports and a
+    stale report can never be mistaken for a current one.
+
     Examples
     --------
-    Create a concrete component type:
-    
-    >>> class Reservoir(WNTREPANETType):
-    ...     @property
-    ...     def type(self) -> str:
-    ...         return "Reservoir"
-    ...
-    >>> reservoir = Reservoir()
-    >>> reservoir.data = {"head": 150.0}
-    >>> reservoir.type
-    'Reservoir'
-    >>> reservoir.as_dict()
-    {'head': 150.0}
-    
-    Check for validation warnings:
-    
-    >>> component = SomeComponent()
-    >>> component.data = some_data  # May generate warnings
-    >>> if component.has_warnings:
-    ...     print(component.warnings)
-    
-    See Also
-    --------
-    WNTREPANETTypeValidator : Descriptor class for data validation
+    >>> from epanetparser.core.epanettypes import WNTREPANETNode
+    >>> node = WNTREPANETNode({"name": "J1", "node_type": "Junction", "elevation": 10.0})
+    >>> node.data = {"name": "J1", "node_type": "Junction"}   # no validation
+    >>> report = node.validate()
+    >>> report.is_valid
+    False
+    >>> report.codes()
+    ['E_JUNCTION_HAS_ELEVATION']
     """
-    data = WNTREPANETTypeValidator()
 
-    def as_dict(self) -> Dict[str, Dict]:
-        """Convert component data to dictionary representation.
-        
-        Returns the component's validated data as a Python dictionary. This is
-        useful for serialization, data inspection, or conversion to other formats.
-        
+    #: Collection this component belongs to within a network. Optional.
+    component_kind: Optional[str] = None
+
+    def __init__(self, data: Optional[Dict[str, Any]] = None) -> None:
+        """Store the component's fields.
+
+        Parameters
+        ----------
+        data : Optional[Dict[str, Any]]
+            Fields parsed from the source document.
+        """
+        self.data: Dict[str, Any] = data if data is not None else {}
+
+    def validate(self, context: Any = None) -> ValidationReport:
+        """Run the selected validation rules against this component.
+
+        Parameters
+        ----------
+        context : Any
+            Rule set selection. Anything
+            :meth:`~epanetparser.core.validation.engine.ValidationContext.from_any`
+            accepts: a rule set key, a sequence of keys, a context, or a
+            mapping with ``core`` and ``custom`` entries. Defaults to the core
+            rule set alone.
+
         Returns
         -------
-        dict
-            Dictionary containing the component's validated data with field names
-            as keys and their corresponding values.
-        
+        ValidationReport
+            Structured result. Check
+            :attr:`~epanetparser.core.validation.results.ValidationReport.is_valid`;
+            no exception is raised for a rule failure.
+
+        Notes
+        -----
+        This method contains no rule logic of its own; it delegates to the
+        engine, which selects rule sets by class name. Subclasses therefore do
+        not need to override it, and custom rules apply to existing component
+        classes unchanged.
+
+        Raises
+        ------
+        RuleSetSelectionError
+            If ``context`` names a rule set that has not been discovered, or
+            does not select exactly one core rule set.
+        RuleExecutionError
+            If a selected rule raises an exception other than
+            ``AssertionError``, which indicates a defect in the rule.
+
         Examples
         --------
-        >>> component = SomeComponent()
-        >>> component.data = {"field1": 10, "field2": "value"}
-        >>> component.as_dict()
-        {'field1': 10, 'field2': 'value'}
-        
-        See Also
+        >>> from epanetparser.core.epanettypes import WNTREPANETNode
+        >>> node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
+        >>> node.validate().is_valid
+        False
+        """
+        from epanetparser.core.validation import validate
+
+        return validate(self, context)
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Return the component's fields as a dictionary.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The component's ``data``. The returned dictionary is the live one,
+            not a copy, so callers that intend to modify the model should copy
+            it first.
+
+        Examples
         --------
-        as_json : Convert component data to JSON string
+        >>> WNTREPANETType  # doctest: +SKIP
+        >>> node.as_dict()["name"]
+        'J1'
         """
         return self.data
 
     def as_json(self) -> str:
-        """Convert component data to JSON string representation.
-        
-        Serializes the component's validated data to a JSON-formatted string.
-        This is useful for data export, API responses, or file storage.
-        
+        """Return the component's fields as a JSON string.
+
         Returns
         -------
         str
-            JSON string representation of the component's validated data.
-        
+            JSON representation of :meth:`as_dict`.
+
         Examples
         --------
-        >>> component = SomeComponent()
-        >>> component.data = {"field1": 10, "field2": "value"}
-        >>> component.as_json()
-        '{"field1": 10, "field2": "value"}'
-        
-        See Also
-        --------
-        as_dict : Convert component data to dictionary
+        >>> WNTREPANETType  # doctest: +SKIP
+        >>> node.as_json()
+        '{"name": "J1"}'
         """
         return json.dumps(self.data)
-    
+
     @property
     @abstractmethod
     def type(self) -> str:
-        """Get the type identifier for this component.
-        
-        This abstract property must be implemented by all concrete subclasses
-        to return a string that uniquely identifies the component type. The
-        type string is used for component categorization, validation schema
-        selection, and serialization.
-        
-        Returns
-        -------
-        str
-            String identifier for the component type. Common values include
-            'Junction', 'Reservoir', 'Tank', 'Pipe', 'Pump', 'Valve',
-            'Pattern', 'Curve', 'Control', etc.
-        
-        Notes
-        -----
-        This is an abstract property and will raise `TypeError` if instantiated
-        without implementation in a subclass.
-        
-        Examples
-        --------
-        >>> class Pipe(WNTREPANETType):
-        ...     @property
-        ...     def type(self) -> str:
-        ...         return "Pipe"
-        ...
-        >>> pipe = Pipe()
-        >>> pipe.type
-        'Pipe'
-        """
+        """Concrete type identifier of the component.
 
-    @property
-    def has_warnings(self) -> bool:
-        """Check if this component has any validation warnings.
-        
-        Determines whether the component has accumulated any validation warnings
-        during data assignment or validation. Warnings are non-fatal issues that
-        don't prevent component creation but may indicate potential problems.
-        
-        Returns
-        -------
-        bool
-            True if the component has one or more validation warnings,
-            False otherwise (including when no warnings attribute exists).
-        
-        Notes
-        -----
-        The `warnings` attribute is only created on the instance when validation
-        warnings are generated. This method safely checks for its existence and
-        content without raising an AttributeError.
-        
-        Examples
-        --------
-        >>> component = SomeComponent()
-        >>> component.data = valid_data
-        >>> component.has_warnings
-        False
-        
-        >>> component.data = questionable_data  # Generates warnings
-        >>> component.has_warnings
-        True
-        >>> component.warnings
-        ['Warning: Unusual value detected', 'Warning: Field X deprecated']
-        
-        See Also
-        --------
-        warnings : List of validation warning messages (if any)
+        Subclasses return the EPANET type, such as ``"Junction"``,
+        ``"Reservoir"``, ``"Tank"``, ``"Pipe"``, ``"Pump"`` or ``"Valve"``.
+        Rules restricted with ``@match`` compare against this value.
         """
-        return hasattr(self, "warnings") and len(self.warnings) > 0 # pylint: disable=no-member
-    
-    
-if __name__ == "__main__":
-    # Example usage of the base type class (for testing purposes)
-    class ExampleComponent(WNTREPANETType):
-        @property
-        def type(self) -> str:
-            return "ExampleComponent"
-    
-    # Create an instance and set some example data
-    example = ExampleComponent()
-    example.data = {"field1": 10, "field2": "test_value"}
-    
-    # Test the serialization methods
-    print("Dictionary representation:")
-    print(example.as_dict())
-    
-    print("\nJSON representation:")
-    print(example.as_json())
-    
-    print("\nComponent type:")
-    print(example.type)
-    
-    print("\nHas warnings:")
-    print(example.has_warnings)

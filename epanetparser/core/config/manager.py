@@ -27,7 +27,7 @@ Examples
 
 See Also
 --------
-epanetparser.core.config.loader : ConfigLoader class for accessing configuration values
+epanetparser.core.config.config : ConfigLoader class for accessing configuration values
 """
 from typing import Optional, Any
 from pathlib import Path
@@ -35,7 +35,7 @@ from importlib.resources import files
 import shutil
 import yaml
 from platformdirs import user_config_dir
-from epanetparser.core.config.loader import ConfigLoader
+from epanetparser.core.config import Config
 
 
 class ConfigManager:
@@ -75,7 +75,8 @@ class ConfigManager:
         """
         self._config = None
         self._user_config_path: Path = \
-            Path(user_config_dir(self.APP_NAME)) / "config.yaml"
+            Path(user_config_dir(self.APP_NAME)) / "default_config.yaml"
+        self.create_user_config()  # Ensure user config exists on initialization
         
     @property
     def user_config_path(self) -> Optional[Path]:
@@ -115,7 +116,7 @@ class ConfigManager:
             .joinpath("default_config.yaml")
         )
         
-    def ensure_user_config(self, overwrite: bool = False) -> Path:
+    def create_user_config(self, overwrite: bool = False) -> Path:
         """Create user configuration file if it does not exist.
         
         Checks if the user configuration file exists. If not, creates the
@@ -138,8 +139,8 @@ class ConfigManager:
         >>> config_path = manager.ensure_user_config()
         >>> print(f"Config file: {config_path}")
         """
-        _destination = self.user_config_path
-        if _destination and not overwrite:
+        _destination = self._user_config_path
+        if _destination.exists() and not overwrite:
             return _destination
         _destination.parent.mkdir(parents=True, exist_ok=True)
         with (
@@ -149,7 +150,7 @@ class ConfigManager:
             shutil.copyfileobj(src, dst)
         return _destination
         
-    def load(self) -> ConfigLoader:
+    def load(self) -> Config:
         """Load application configuration with user overrides.
         
         Loads the default package configuration and merges it with user-specific
@@ -173,11 +174,11 @@ class ConfigManager:
         >>> value = config.get('section.subsection.key')
         """
         _config = self._load_defaults()
-        if self.user_config_path.exists():
+        if self._user_config_path.exists():
             with self.user_config_path.open("r", encoding="utf8") as file_handle:
                 user = yaml.safe_load(file_handle) or {}
             _config = self._deep_merge(_config, user)
-        return ConfigLoader(_config)
+        return Config(_config)
 
     def _load_defaults(self) -> dict[str, Any]:
         """Load default configuration from package resources.
@@ -241,64 +242,4 @@ class ConfigManager:
 
 
 if __name__ == "__main__":
-    from rich import print as rprint
-    from rich.panel import Panel
-    from rich.console import Console
-    
-    console = Console()
-    
-    rprint("[bold yellow]═══ ConfigManager Demo ═══[/bold yellow]\n")
-    
-    # Initialize manager
-    manager = ConfigManager()
-    
-    # 1. Show configuration paths
-    rprint("[bold cyan]1. Configuration Paths[/bold cyan]")
-    rprint(f"   Default config resource: {manager.default_config_resource}")
-    rprint(f"   User config location: {manager.user_config_path}")
-    rprint(f"   User config exists: {manager.user_config_path is not None}\n")
-    
-    # 2. Load configuration (before ensuring user config exists)
-    rprint("[bold cyan]2. Load Configuration (Package Defaults)[/bold cyan]")
-    config = manager.load()
-    rprint(f"   ConfigLoader type: {type(config).__name__}")
-    config_keys = list(config.data.keys())
-    rprint(f"   Configuration sections: {config_keys}\n")
-    
-    # 3. Ensure user config exists
-    rprint("[bold cyan]3. Ensure User Configuration Exists[/bold cyan]")
-    user_config_path = manager.ensure_user_config()
-    rprint(f"   User config path: {user_config_path}")
-    rprint(f"   File exists: {user_config_path.exists()}\n")
-    
-    # 4. Reload configuration (now with user config)
-    rprint("[bold cyan]4. Reload Configuration (With User Overrides)[/bold cyan]")
-    config = manager.load()
-    rprint(f"   ConfigLoader loaded successfully")
-    rprint(f"   Total sections: {len(config.data)}\n")
-    
-    # 5. Show example configuration access
-    rprint("[bold cyan]5. Example Configuration Access[/bold cyan]")
-    # Show a sample of the configuration structure (first 3 sections)
-    sample_config = dict(list(config.data.items())[:3])
-    if sample_config:
-        rprint("   Sample configuration (first 3 sections):")
-        yaml_output = yaml.dump(sample_config, default_flow_style=False, sort_keys=False)
-        console.print(Panel(yaml_output, title="Configuration Sample", border_style="green"))
-    else:
-        rprint("   [dim]No configuration data available[/dim]")
-    
-    # 6. Show how to access specific values
-    rprint("\n[bold cyan]6. Accessing Configuration Values[/bold cyan]")
-    if config_keys:
-        first_key = config_keys[0]
-        rprint(f"   Example: config.data['{first_key}']")
-        try:
-            value = config.data[first_key]
-            rprint(f"   Type: {type(value).__name__}")
-            if isinstance(value, dict):
-                rprint(f"   Keys: {list(value.keys())[:5]}")  # Show first 5 keys
-        except Exception as e:
-            rprint(f"   [red]Error: {e}[/red]")
-    
-    rprint("\n[bold green]✓ ConfigManager demo completed successfully![/bold green]")
+    pass

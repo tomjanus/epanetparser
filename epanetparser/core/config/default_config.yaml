@@ -1,21 +1,32 @@
 --- # Default configuration for epanetparser
-rule_discovery:
-  base_paths:
-    - epanetparser.rules
-  metadata_fields:
-    - component_type
-  entry_point_group: epanetparser.rules
-  file_patterns:
-    - "*_rules.py"
-    - "*_warnings.py"
 
-ruleset_discovery:
-  base_paths:
-    - epanetparser.rulesets
-  metadata_fields:
-    - __key__
-    - __ruleset_name__
-    - __version__
-  entry_point_group: epanetparser.rulesets
-  file_patterns:
-    - "*.py"
+# Packages searched for validation rule sets. Both core and custom rule sets are
+# found by the same pass over these paths; a module is a core rule set when it
+# sets `__is_core__ = True`, and custom otherwise. Exactly one core rule set may
+# be selected for a validation run; any number of custom ones may be added.
+rule_set_discovery:
+  packages:
+    - epanetparser.core_rules
+    - epanetparser.custom_rules
+
+logging:
+  level: INFO
+  show_time: true
+  show_path: false
+  enable_link_path: false
+  markup: true
+  rich_tracebacks: true
+  tracebacks_show_locals: false
+  tracebacks_extra_lines: 3
+  tracebacks_theme: null
+  datefmt: "[%X]"
+  log_format: "%(message)s"
+  file_format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  logfile: null
+  max_bytes: 5242880
+  backup_count: 5
+  console_level: null
+  file_level: null
+  force: false
+  console: null
+  ignored_loggers: []

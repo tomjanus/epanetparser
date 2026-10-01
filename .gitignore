@@ -14,13 +14,13 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -221,3 +221,12 @@ __marimo__/
 
 # Additional (downloaded) networks
 epanetparser/networks/extra
+
+# Agentic AI files
+.opencode
+.claude
+AGENT.md
+PROMPT.md
+CONTEXT.md
+opencode.json
+opencode.jsonc

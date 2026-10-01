@@ -1,53 +1,80 @@
-""" """
+"""Network metadata component.
+
+The network information component carries the descriptive fields WNTR records
+alongside a model: its name, comment, version and references. It is not an
+EPANET section; it is metadata about the file, and EPANET itself neither
+requires nor reads it.
+
+Validation rules for network metadata live in
+:mod:`epanetparser.core_rules.epanet_core.network_info`.
+"""
+from typing import Any, Dict, List
+
 from .base import WNTREPANETType
 
+#: Metadata fields retained by this component, in reporting order.
+NETWORK_INFO_KEYS = ("name", "comment", "version", "references")
+
+
 class WNTREPANETNetworkInfo(WNTREPANETType):
-    """ Class representing the network information component of an EPANET network. 
-    
-    NOTE: 
+    """Descriptive metadata about an EPANET model.
+
+    Attributes
+    ----------
+    component_kind : str
+        ``"network_info"``.
+
+    Notes
     -----
-    The network_info component is not a standard EPANET component but is included in 
-    the WNTR JSON format to capture metadata about the network.
-    This class provides properties to access common metadata fields such as name, 
-    comment, version, and references, and includes validation rules to ensure that 
-    required metadata is present.
+    Only the fields in :data:`NETWORK_INFO_KEYS` are retained; anything else in
+    the source document is dropped, so the component does not accumulate
+    arbitrary keys from a particular producer.
+
+    Examples
+    --------
+    >>> from epanetparser.core.epanettypes.network_info import WNTREPANETNetworkInfo
+    >>> info = WNTREPANETNetworkInfo({"name": "Net1", "version": "wntr-1.4.0", "extra": 1})
+    >>> info.name
+    'Net1'
+    >>> sorted(info.data)
+    ['name', 'version']
     """
-    def __init__(self, data) -> None:
-        _network_info_keys = ["name", "comment", "version", "references"]
-        self.data = {k: data[k] for k in _network_info_keys if k in data}
+
+    component_kind: str = "network_info"
+
+    def __init__(self, data: Dict[str, Any]) -> None:
+        """Store the recognised metadata fields.
+
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            Source metadata. Unrecognised keys are discarded.
+        """
+        super().__init__(
+            {key: data[key] for key in NETWORK_INFO_KEYS if key in data}
+        )
 
     @property
     def name(self) -> str:
-        """ Get the name of the network, if available. """
+        """Name of the model, or an empty string if absent."""
         return self.data.get("name", "")
-    
+
     @property
     def comment(self) -> str:
-        """ Get the comment associated with the network, if available. """
+        """Comment describing the model, or an empty string if absent."""
         return self.data.get("comment", "")
-    
+
     @property
     def version(self) -> str:
-        """ Get the version of the network, if available. """
+        """Version of the tool that wrote the model, or an empty string."""
         return self.data.get("version", "")
-    
+
     @property
-    def references(self) -> list:
-        """ Get any references associated with the network, if available. """
+    def references(self) -> List[Any]:
+        """References recorded with the model, or an empty list."""
         return self.data.get("references", [])
-    
+
     @property
     def type(self) -> str:
-        """ Return the component type identifier for this class. """
+        """Component type identifier, always ``"network_info"``."""
         return "network_info"
-
-    # Validation rules and warnings for the network_info component
-
-    def rule_network_has_name(self) -> None:
-        """ Ensure that the network has a name. """
-        assert self.name, "Network missing a name"
-
-    # TODO: This warning does not show up if a rule shows up
-    def warn_network_has_version(self) -> None:
-        """ Warn if the network is missing a version. """
-        assert self.version, "Network missing a version"

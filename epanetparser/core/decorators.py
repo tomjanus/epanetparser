@@ -7,8 +7,19 @@ Functions
 ---------
 extract_quick_description
     Extract brief description from a function's docstring.
+described
+    Decorator to add a 'description' attribute to a function based on its docstring.
+match
+    Decorator to apply validation rules only to components of a specific type.
+    
+Classes
+-------
+DescribedCallable
+    Protocol for a callable with a 'description' attribute.
 """
-from typing import Any, Protocol, ParamSpec, TypeVar, cast
+from typing import Any, Protocol, ParamSpec, TypeVar, Optional, cast, overload
+from enum import Enum
+from dataclasses import dataclass
 import inspect
 from collections.abc import Callable
 import functools
@@ -18,27 +29,125 @@ F = TypeVar('F', bound=Callable[..., Any])
 P = ParamSpec("P")
 R = TypeVar("R")
 
+class RuleType(str, Enum):
+    """Enumeration of rule severities used by validation decorators.
 
-class DescribedCallable(Protocol[P, R]): # pylint: disable=too-few-public-methods
-    """Protocol for a callable with a 'description' attribute."""
+    Attributes
+    ----------
+    ERROR : str
+        Indicates that a rule violation should be treated as an error.
+    WARNING : str
+        Indicates that a rule violation should be treated as a warning.
+    """
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+@dataclass(frozen=True)
+class RuleMetadata:
+    """Container for metadata attached to a registered validation rule.
+
+    Attributes
+    ----------
+    component_type : str
+        Component type this rule applies to (for example, ``Junction``).
+    rule_type : RuleType
+        Severity classification for the rule.
+    name : str or None
+        Optional explicit rule name used for registration and replacement.
+    replace : bool
+        Whether this rule should replace an existing rule with the same name.
+    """
+
+    component_type: str
+    rule_type: RuleType
+    name: str | None
+    replace: bool = False
+
+
+class RuleMethod(Protocol[P, R]):
+    """Protocol describing a callable rule with attached registration metadata.
+
+    Attributes
+    ----------
+    __rule_metadata__ : RuleMetadata
+        Metadata populated by :func:`register_rule`.
+    """
+
+    __rule_metadata__: RuleMetadata
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
+        ...
+        
+
+class DescribedCallable(Protocol[P, R]):
+    """
+    Protocol for a callable that carries a human-readable description.
+
+    This is used to attach metadata (typically extracted from a docstring
+    or provided via decorator override) to validation or rule functions.
+
+    Attributes
+    ----------
+    description : str
+        Human-readable description of the callable.
+    """
     description: str
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         ...
 
 
+class DescribedRuleMethod(
+    RuleMethod[P, R],
+    DescribedCallable[P, R],
+    Protocol[P, R],
+):
+    """Protocol combining descriptive and rule-registration metadata.
+
+    Notes
+    -----
+    This protocol is satisfied by callables that provide both a
+    ``description`` attribute and ``__rule_metadata__`` metadata.
+    """
+
+    pass
+
+
+def register_rule(
+    component_type: str,
+    rule_type: RuleType | str,
+    *,
+    name: str | None = None,
+    replace: bool = False):
+    """ Decorator to register a validation rule for a specific component type. """
+    rule_type = RuleType(rule_type)
+    def decorator(func: Callable[P, R]) -> RuleMethod[P, R]:
+        func.__rule_metadata__ = RuleMetadata(
+            component_type=component_type,
+            rule_type=rule_type,
+            name=name,
+            replace=replace,
+        ) # attach metadata
+        return cast(RuleMethod[P, R], func)
+    return decorator
+
+
 def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
-    """Extract quick description from a function's docstring.
-    
-    Extracts a brief summary from a function's docstring, either from an
-    RST `:summary:` field or from the first line following PEP 257 conventions.
+    """
+    Extract a short human-readable description from a function docstring.
+
+    Priority:
+    1. RST-style ':summary:' field (if `use_summary=True`)
+    2. First non-empty line of the docstring (PEP 257 style)
     
     Parameters
     ----------
     func : Callable
         Function or method to extract description from.
     use_summary : bool, optional
-        If True (default), attempt to extract description from `:summary:` RST field.
-        Falls back to first line if field not found. If False, always use first line.
+        If True, attempts to extract a ':summary:' field from the docstring.
+        If not found or False, falls back to the first docstring line.
     
     Returns
     -------
@@ -47,29 +156,23 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     
     Examples
     --------
-    From first line (standard):
-    
-    >>> def my_rule(self):
-    ...     '''Validate positive value.
-    ...     
-    ...     Longer description here.
-    ...     '''
+    Standard docstring:
+
+    >>> def f():
+    ...     \"\"\"Validate positive value.\"\"\"
     ...     pass
-    >>> _extract_quick_description(my_rule)
+    >>> extract_quick_description(f)
     'Validate positive value.'
-    
-    From RST :summary: field:
-    
-    >>> def my_rule(self):
-    ...     '''Validate tank configuration.
-    ...     
-    ...     :summary: Ensure tank has required parameters.
-    ...     
-    ...     Longer description here.
-    ...     '''
-    ...     pass
-    >>> _extract_quick_description(my_rule, use_summary=True)
-    'Ensure tank has required parameters.'
+
+    With :summary: field:
+
+    >>> def f():
+    ...     \"\"\"Validate tank.
+    ...
+    ...     :summary: Ensure tank configuration is valid.
+    ...     \"\"\"
+    >>> extract_quick_description(f)
+    'Ensure tank configuration is valid.'
     
     Notes
     -----
@@ -96,46 +199,51 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     return first_line
 
 
-def described(func: Callable[P, R]) -> DescribedCallable[P, R]:
-    """Decorator adding a 'description' attribute to a function.
-    
-    The 'description' attribute is extracted from the function's docstring,
-    providing a brief summary of the validation rule. Works with both pure
-    functions and methods defined in classes.
-    
-    Parameters
-    ----------
-    func : Callable[P, R]
-        The function or method to decorate.
-    
-    Returns
-    -------
-    DescribedCallable[P, R]
-        The original function with an added 'description' attribute.
-    
+@overload
+def described(func: Callable[P, R]) -> DescribedCallable[P, R]: ...
+
+@overload
+def described(desc: str) -> Callable[[Callable[P, R]], DescribedCallable[P, R]]: ...
+
+def described(func_or_desc: Optional[Callable[P, R] | str] = None) -> Callable[[Callable[P, R]], DescribedCallable[P, R]] | DescribedCallable[P, R]:
+    """
+    Decorator that attaches a human-readable description to a function.
+
+    The description is determined in the following order:
+    1. Explicit override string passed to the decorator
+    2. Extracted docstring summary (via `extract_quick_description`)
+    3. Function name fallback
+
+    Supports both direct usage and parameterized usage.
+
     Examples
     --------
-    With a pure function:
-    
     >>> @described
-    ... def validate_positive(value: float) -> None:
-    ...     '''Ensure value is positive.'''
-    ...     assert value > 0
-    >>> validate_positive.description
-    'Ensure value is positive.'
-    
-    With a method in a class:
-    
-    >>> class Component:
-    ...     @described
-    ...     def rule_has_name(self) -> None:
-    ...         '''Validate that component has a name.'''
-    ...         assert hasattr(self, 'name')
-    >>> Component.rule_has_name.description
-    'Validate that component has a name.'
+    ... def rule_x():
+    ...     \"\"\"Check validity.\"\"\"
+    ...     pass
+
+    >>> rule_x.description
+    'Check validity.'
+
+    >>> @described("Custom description")
+    ... def rule_y():
+    ...     pass
     """
-    setattr(func, "description", extract_quick_description(func))
-    return cast(DescribedCallable[P, R], func)
+    # CASE 1: @described
+    if callable(func_or_desc):
+        func = func_or_desc
+        func.description = extract_quick_description(func) or func.__name__
+        return cast(DescribedCallable[P, R], func)
+    # CASE 2: @described("...")
+    def decorator(func: Callable[P, R]) -> DescribedCallable[P, R]:
+        override = func_or_desc
+        if isinstance(override, str) and override.strip():
+            func.description = override.strip()
+        else:
+            func.description = extract_quick_description(func) or func.__name__
+        return cast(DescribedCallable[P, R], func)
+    return decorator
 
 
 def match(typename: str, fuzzy: bool = False) -> Callable[[F], F]:
