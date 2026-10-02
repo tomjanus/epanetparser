@@ -1,0 +1,169 @@
+@startuml epanetparser_rule_sets
+
+' =====================================================================
+' epanetparser -- rule set modules and the exception taxonomy
+'
+' Two things that sit outside the engine (epanetparser_validation_engine.puml)
+' but are worth seeing together: the modules that define rules, and the
+' exceptions raised when parsing or rule selection goes wrong.
+' =====================================================================
+
+title EPANET Parser - Rule Sets and Exceptions
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 50
+skinparam ranksep 40
+skinparam shadowing false
+hide empty members
+
+legend right
+  |<#pink> Core rule set |
+  |<#lightblue> Custom rule set |
+  |<#lightyellow> Authoring decorators |
+  |<#lightgreen> Exceptions |
+  |<#lightgray> Warnings |
+endlegend
+
+' ---------------------------------------------------------------------
+' RULE SET MODULES
+' ---------------------------------------------------------------------
+
+package "Rule set modules" as RuleSetModules #lightyellow {
+  class epanet_core <<module>> #pink {
+    __key__ = "epanet_core"
+    __ruleset_name__ = "EPANET core rules"
+    __version__ = "1.0.0"
+    __is_core__ = True
+    --
+    35 component rules
+    9 network rules
+    --
+    Simulator-agnostic checks that a model
+    is a well-formed EPANET model:
+    required component fields, valid
+    component types, well-formed curves,
+    unique component names, and resolvable
+    references between components.
+  }
+
+  class milp <<module>> #lightblue {
+    __key__ = "milp"
+    __ruleset_name__ = "Mixed Integer Linear Programming ruleset"
+    __version__ = "0.2.0"
+    __is_core__ = False
+    --
+    17 component rules
+    --
+    Constraints imposed by one example MILP
+    pump scheduling tool: a 24 hour horizon
+    on a 1 hour timestep, demand-driven
+    analysis in LPS, no pressure unit
+    overrides, and no use of valves, check
+    valves, tank volume curves, tank
+    overflow, emitters or controls.
+  }
+}
+
+' ---------------------------------------------------------------------
+' AUTHORING DECORATORS
+' ---------------------------------------------------------------------
+
+package "Authoring helpers" as Helpers #lightyellow {
+  class rule <<decorator>> #lightyellow {
+    + component_type
+    + code / severity / attribute
+    --
+    Returns a RuleSpec-bearing decorator.
+  }
+
+  class network_rule <<decorator>> #lightyellow {
+    + code / severity / attribute
+    --
+    As rule(), but the function receives
+    the model as a whole and its RuleSpec
+    carries component_type = None.
+  }
+
+  class match <<decorator>> #lightyellow {
+    + typename: str
+    + fuzzy: bool
+    --
+    Narrows a rule to components whose
+    type equals typename, or contains it
+    when fuzzy is set (case-insensitive).
+    Imported from epanetparser.core.decorators.
+  }
+
+  class defined <<function>> #lightyellow {
+    defined(component, field) -> bool
+    --
+    True when a field carries a value.
+    Rejects a field that is present but
+    null, which is what JSON producers emit
+    when they have nothing to put in it.
+  }
+}
+
+' ---------------------------------------------------------------------
+' EXCEPTIONS: two independent roots
+' ---------------------------------------------------------------------
+class WNTREPANETParserException #lightgreen {
+  --
+  Root of the parsing-side errors.
+}
+
+class WNTREPANETParserWarning #lightgray {
+  --
+  Root of the warning side. Separate from
+  the error tree, which is why a
+  warning does not invalidate a model.
+}
+
+package "Parser exceptions and warnings" as Exceptions #lightgreen {
+  class WNTREPANETTypeValidationError #lightgreen {
+    + as_dict() -> Dict
+  }
+
+  class WNTREPANETTypeValidationErrorBundle #lightgreen {
+    + errors
+    + warnings
+  }
+
+  class WNTREPANETNetworkValidationError #lightgreen {
+    + as_dict() -> Dict
+  }
+
+  class WNTREPANETTypeValidationWarning #lightgray {
+    + as_dict() -> Dict
+  }
+}
+
+
+
+
+' Core states what EPANET requires; a custom set states what one
+' particular tool can handle. Both can be true of the same model.
+' ---------------------------------------------------------------------
+' RELATIONSHIPS
+' ---------------------------------------------------------------------
+WNTREPANETParserException <|-- Exceptions : three error types
+WNTREPANETParserWarning <|-- Exceptions : one warning type
+
+Helpers ..> Helpers : @match below @rule, @network_rule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@enduml

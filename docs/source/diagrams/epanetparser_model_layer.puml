@@ -1,0 +1,212 @@
+@startuml epanetparser_model_layer
+
+' =====================================================================
+' epanetparser -- the model layer
+'
+' Parsing builds this and stops. Nothing here validates; component.validate()
+' delegates to the engine, which lives in epanetparser_validation_engine.puml.
+'
+' Only Severity.ERROR findings make a report invalid, and those come from
+' the engine, not from data assignment.
+' =====================================================================
+
+title EPANET Parser - Model Layer
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 45
+skinparam ranksep 40
+skinparam shadowing false
+hide empty members
+
+legend right
+  |<#lightgreen> Model base |
+  |<#lightyellow> Component |
+  |<#lightgray> Derived |
+endlegend
+
+' ---------------------------------------------------------------------
+' BASE
+' ---------------------------------------------------------------------
+abstract class WNTREPANETType <<ABC>> #lightgreen {
+  + data: Dict[str, Any]
+  + component_kind: Optional[str]
+  --
+  + {abstract} type: str
+  + validate(context) -> ValidationReport
+  + as_dict() -> Dict[str, Any]
+  + as_json() -> str
+  --
+  One data dict, read-only accessors, and
+  no rules. Subclasses cannot be extended
+  to add validation.
+}
+
+note right of WNTREPANETType
+  The only abstract member is
+  **type**. validate() carries no rule
+  logic; it delegates to the engine,
+  so subclasses need no overrides.
+
+  Assigning .data never validates
+  and never raises.
+end note
+
+' ---------------------------------------------------------------------
+' COMPONENTS
+'
+' COMPONENT_COLLECTIONS is the ordered tuple
+'   ("curves", "patterns", "nodes",
+'    "links", "sources", "controls")
+' i.e. six list-backed collections, plus two
+' single instances: options and network_info.
+' ---------------------------------------------------------------------
+package "Component collections" as Components #lightyellow {
+  class WNTREPANETNode #lightyellow {
+    + node_types: Tuple[str, ...]
+    --
+    + coordinates / type / name
+    + emitter_coefficient / attrs
+    --
+    Junction, Reservoir, Tank
+  }
+
+  class WNTREPANETLink #lightyellow {
+    + link_types: Tuple[str, ...]
+    --
+    + type / name
+    --
+    Pipe, Pump, Valve
+  }
+
+  class WNTREPANETCurve #lightyellow {
+    + type / name / points
+    --
+    One of head, volume, efficiency.
+  }
+
+  class WNTREPANETPattern #lightyellow {
+    + name / multipliers / type
+    --
+    Demand and control patterns.
+  }
+
+  class WNTREPANETControl #lightyellow {
+    + type / condition / then_actions
+    --
+    Time-of-day or pattern-of-day rules.
+  }
+
+  class WNTREPANETSource #lightyellow {
+    + type / node_name
+    + source_type / strength / pattern
+    --
+    WNTR names the constituent field
+    source_type, not param, and the
+    modulating pattern pattern.
+  }
+
+  class WNTREPANETOptions #lightyellow {
+    + time_options / hydraulic_options
+    + report_options / quality_options
+    + reaction_options / energy_options
+    + graphics_options / user_options
+    --
+    + attrs / type
+    --
+    A single instance on the network, not a
+    list-backed collection.
+  }
+
+  class WNTREPANETNetworkInfo #lightyellow {
+    + name / comment / version
+    + references / type
+    --
+    A single instance on the network, not a
+    list-backed collection.
+  }
+}
+
+' ---------------------------------------------------------------------
+' NETWORK
+' ---------------------------------------------------------------------
+class WNTREPANETNetwork #lightgreen {
+  + COMPONENT_COLLECTIONS: Tuple[str, ...]
+  --
+  + from_file(filename, ...) -> Tuple
+  + from_json(json_src, ...) -> Tuple
+  --
+  + build_index() -> NetworkIndex
+  + invalidate_index() -> None
+  + validate(context) -> ValidationReport
+  + report() -> Dict[str, int]
+  + verbose_report() -> Dict[str, int]
+  + component(collection, name)
+  + name / comment / version
+  --
+  + as_dict() / as_json(indent)
+  --
+  from_file and from_json return
+  (network, errors, warnings). Exactly
+  one of network or errors is not None.
+  Both .inp and WNTR .json are accepted;
+  .inp is converted with WNTR first.
+}
+
+class WNTRNetworkStatistics #lightgray {
+  + __init__(network)
+  --
+  + get_component_types(name)
+  + get_number_of_components(name)
+  + report() -> Dict[str, int]
+  --
+  Counts components grouped by concrete
+  type.
+}
+
+class NetworkIndex #lightgray {
+  + nodes / links / curves / patterns
+  + sources / controls
+  --
+  + collection(name) / has(name)
+  + curves_of_type(name)
+  + duplicates(collection)
+  + counts() -> Dict[str, int]
+  --
+  Name -> component resolution for
+  network rules. Built lazily by
+  build_index() and cached on the
+  network; invalidate_index() discards
+  it.
+}
+
+' ---------------------------------------------------------------------
+' RELATIONSHIPS
+' ---------------------------------------------------------------------
+' Every class in the package extends the one abstract base.
+WNTREPANETType <|-- Components
+
+' The network owns six list-backed collections and two single
+' instances, all defined in the package above.
+WNTREPANETNetwork o-- Components : owns
+
+WNTREPANETNetwork *-- NetworkIndex : index (lazy)
+WNTREPANETNetwork ..> WNTRNetworkStatistics : summarises
+
+note as Access
+  **Two shapes of attribute, one class.**
+  ..
+  Six collections are lists:
+  curves, patterns, nodes, links,
+  sources, controls.
+  ..
+  Two are single instances:
+  options, network_info.
+  ..
+  Both are reached the same way,
+  n.e. network.nodes and
+  network.options.
+end note
+
+WNTREPANETNetwork .. Access
+
+@enduml

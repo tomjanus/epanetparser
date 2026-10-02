@@ -1,0 +1,258 @@
+@startuml epanetparser_class_hierarchy
+
+' =====================================================================
+' epanetparser -- class hierarchy overview
+'
+' Accurate as of the validation refactor. Validation is a separate stage
+' from parsing, and rules are plain functions rather than methods on the
+' component classes, so nothing here validates on data assignment.
+'
+' Detail diagrams:
+'   epanetparser_model_layer.puml        components and the network
+'   epanetparser_validation_engine.puml  registry, validator, results
+'   epanetparser_rule_sets.puml          rule set modules and exceptions
+' =====================================================================
+
+title EPANET Parser - Class Hierarchy Overview
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 55
+skinparam ranksep 45
+skinparam shadowing false
+hide empty members
+
+legend right
+  |<#lightblue> Parser |
+  |<#lightgreen> Model base |
+  |<#lightyellow> Component collections |
+  |<#lavender> Validation engine |
+  |<#pink> Rule sets |
+  |<#lightgray> Expanded in a detail diagram |
+endlegend
+
+' ---------------------------------------------------------------------
+' STAGE 1: PARSER
+' ---------------------------------------------------------------------
+class WNTRJSONParser #lightblue {
+  + __init__(json_src: str)
+  --
+  + parse() -> WNTREPANETNetwork
+  + enforce_unique(ordered_pairs)
+  + missing_keys() -> List[str]
+  + has_errors() -> bool
+  + has_warnings() -> bool
+  --
+  Builds a model and nothing else.
+  Reports structural problems only.
+  Takes no rule set argument.
+}
+
+' ---------------------------------------------------------------------
+' STAGE 2: MODEL
+' ---------------------------------------------------------------------
+abstract class WNTREPANETType <<ABC>> #lightgreen {
+  + data: Dict[str, Any]
+  + component_kind: Optional[str]
+  --
+  + {abstract} type: str
+  + validate(context) -> ValidationReport
+  + as_dict() -> Dict[str, Any]
+  + as_json() -> str
+  --
+  Base class for every component.
+  Holds a data dict and read-only accessors.
+  Contains no rules and cannot be extended
+  to add them.
+}
+
+class WNTREPANETNetwork #lightgreen {
+  + from_file(filename, ...) -> Tuple
+  + from_json(json_src, ...) -> Tuple
+  --
+  + build_index() -> NetworkIndex
+  + invalidate_index() -> None
+  + validate(context) -> ValidationReport
+  + report() -> Dict[str, int]
+  + verbose_report() -> Dict[str, int]
+  + component(collection, name)
+  + name / comment / version
+}
+
+class "WNTREPANETNode\nWNTREPANETLink\nWNTREPANETCurve\nWNTREPANETPattern\nWNTREPANETControl\nWNTREPANETSource\nWNTREPANETOptions\nWNTREPANETNetworkInfo" as Components #lightyellow {
+  8 concrete component classes
+  --
+  Each wraps one data dict and exposes
+  typed read-only accessors.
+}
+
+class NetworkIndex #lightgray {
+  9 accessors
+  --
+  name -> component resolution,
+  built lazily by build_index()
+  and cached on the network.
+}
+
+' ---------------------------------------------------------------------
+' STAGE 3: VALIDATION ENGINE
+' ---------------------------------------------------------------------
+class Validator #lavender {
+  + from_context(context) -> Validator
+  + rules_for(component)
+  --
+  + validate(network, context)
+  + validate_component(component, rules)
+  + validate_network(network, rules)
+  --
+  Runs the selected rules. Returns a
+  report; never raises for a rule failure.
+}
+
+class RuleSetRegistry #lavender {
+  + discover(refresh) -> Dict[str, RuleSet]
+  + resolve(selection) -> Validator
+  + get(key) / keys() / all()
+  + core_keys() / custom_keys()
+  + describe(key)
+}
+
+class RuleSet <<frozen>> #lavender {
+  + key / name / version
+  + description / is_core / module_path
+  --
+  + component_rules: Tuple[RuleSpec, ...]
+  + network_rules: Tuple[RuleSpec, ...]
+  --
+  Rules collected once at construction,
+  so selecting a rule set repeatedly is
+  cheap.
+}
+
+class RuleSpec <<frozen>> #lavender {
+  + rule_id / func
+  + component_type / severity
+  + code / attribute
+  + description / is_network
+  --
+  A rule function plus the metadata
+  used to report its failures.
+}
+
+class ValidationReport #lavender {
+  + is_valid: bool
+  + errors / warnings / info
+  --
+  + by_code(code) / by_component(name)
+  + by_rule(rule_id) / by_severity(sev)
+  + codes() / grouped_by_component()
+  + as_dict()
+}
+
+class ValidationIssue <<frozen>> #lavender {
+  + code / message / severity
+  + rule_id / ruleset_key
+  + component_type / component_name
+  + attribute / context
+  --
+  One finding. The code is stable, so
+  downstream tooling matches on it rather
+  than on message text.
+}
+
+class Severity <<enumeration>> #lavender {
+  ERROR
+  WARNING
+  INFO
+}
+
+class ValidationContext #lavender {
+  + ruleset_keys() -> Tuple[str, ...]
+  + from_any(selection) -> ValidationContext
+  --
+  Rule set selection. Accepts a key, a
+  sequence of keys, a context, or a
+  mapping with core and custom entries.
+}
+
+' ---------------------------------------------------------------------
+' STAGE 4: RULE SETS
+' ---------------------------------------------------------------------
+class epanet_core <<module>> #pink {
+  __key__ = "epanet_core"
+  __is_core__ = True
+  __version__ = "1.0.0"
+  --
+  35 component rules
+  9 network rules
+  --
+  Simulator-agnostic: required fields,
+  valid types, well-formed curves, unique
+  names, resolvable references.
+}
+
+class milp <<module>> #pink {
+  __key__ = "milp"
+  __is_core__ = False
+  __version__ = "0.2.0"
+  --
+  17 component rules
+  --
+  Constraints of one application: fixed
+  horizon, timestep, pattern count,
+  demand model, no check valves.
+}
+
+' ---------------------------------------------------------------------
+' RELATIONSHIPS
+' ---------------------------------------------------------------------
+WNTRJSONParser ..> Components : creates
+WNTRJSONParser ..> WNTREPANETNetwork : builds
+
+WNTREPANETType <|-- Components : (8 subclasses)
+
+WNTREPANETNetwork o-- Components : owns
+WNTREPANETNetwork *-- NetworkIndex : caches
+
+WNTREPANETType ..> Validator : validate()
+WNTREPANETNetwork ..> Validator : validate()
+
+Validator ..> RuleSpec : runs
+Validator ..> ValidationReport : returns
+Validator ..> ValidationContext : selection
+
+RuleSetRegistry ..> RuleSet : discovers
+RuleSetRegistry ..> ValidationContext : resolves
+
+RuleSet *-- RuleSpec : collects
+RuleSpec ..> Severity : severity
+
+ValidationReport o-- ValidationIssue : aggregates
+ValidationIssue ..> Severity : severity
+
+epanet_core ..> RuleSet : defines
+milp ..> RuleSet : defines
+
+note as Flow
+  **Validation is a separate, explicit stage.**
+  ..
+  1. The parser builds components.
+     Assigning .data never validates
+     and never raises.
+  2. component.validate() delegates to
+     the engine, holding no rule logic
+     of its own.
+  3. The registry selects rule sets from
+     the configured packages and the
+     entry point group.
+  4. The validator runs each RuleSpec.
+  5. AssertionError becomes a
+     ValidationIssue on a
+     ValidationReport.
+  6. Only Severity.ERROR makes a report
+     invalid.
+end note
+
+WNTREPANETType .. Flow
+Validator .. Flow
+
+@enduml

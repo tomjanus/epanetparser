@@ -15,10 +15,14 @@ EPANET Parser -- A toolkit for validating EPANET models
 for Pywr json network definitions"* developed by Dr. Paul Slavin from the University
 of Manchester, UK. While `pywrparser` enables validation and manipulation of **Pywr** networks,
 `epanetparser` is a modification of `pywrparser` that enables validation of **EPANET**
-network models. The source code for `pywrparser` is available `here <https://github.com/pmslavin/pywrparser>` whereas its documentation can be found `here https://pmslavin.github.io/pywrparser/>` 
+network models. The source code for `pywrparser
+<https://github.com/pmslavin/pywrparser>`_ and its `documentation
+<https://pmslavin.github.io/pywrparser/>`_ are maintained upstream by
+Dr. Slavin.
 
-The source code for `epanetparser` is available `here <https://github.com/tomjanus/epanetparser>`.
-The documentation is located at `here <https://tomjanus.github.io/epanetparser/>`.
+The source code for `epanetparser <https://github.com/tomjanus/epanetparser>`_
+and its `docs <https://tomjanus.github.io/epanetparser/>`_ are maintained
+here.
 
 `epanetparser` works on `JSON` representations of **EPANET** network models that use the
 format/schema defined in `USEPA WNTR - The Water Network Tool for Resilience <https://github.com/USEPA/WNTR>`_
@@ -379,8 +383,9 @@ The pipeline is:
         v
     Simulation-specific validation
 
-The UML diagram describing the core classes and their relationships can be
-found in the ``docs/epanetparser_class_hierarchy.puml`` file.
+UML diagrams describing the core classes and their relationships are in
+``docs/source/diagrams/``, and are rendered in the
+`class hierarchy page <https://tomjanus.github.io/epanetparser/hierarchy.html>`_.
 
 Validation architecture
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -626,7 +631,7 @@ tools it builds on:
     epanetparser: a toolkit for parsing, validating and converting EPANET
     network models. https://github.com/tomjanus/epanetparser
 
-    Slavin, P. and Janus, T. pywrparser: a parser and validator for Pywr
+    Slavin, P. pywrparser: a parser and validator for Pywr
     network definitions. https://github.com/pmslavin/pywrparser
 
     Wagner, J. et al. WNTR: A Python package to simulate and analyze resilience
@@ -636,5 +641,5 @@ Acknowledgments
 ----------------
 
 ``epanetparser`` is a fork of ``pywrparser`` by Dr. Paul Slavin, and depends
-on some of the code from WNTR <https://github.com/USEPA/WNTR>`_ by the US EPA.
+on some of the code from `WNTR <https://github.com/USEPA/WNTR>`_ by the US EPA.
 Thanks are due to the authors of both.

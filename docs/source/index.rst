@@ -24,6 +24,7 @@ The `epanetparser` source code is hosted
    :caption: Introduction
 
    usage
+   hierarchy
 
 .. toctree::
    :maxdepth: 2

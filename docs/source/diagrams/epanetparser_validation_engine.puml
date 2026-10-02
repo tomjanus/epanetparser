@@ -1,0 +1,240 @@
+@startuml epanetparser_validation_engine
+
+' =====================================================================
+' epanetparser -- the validation engine
+'
+' Everything in epanetparser.core.validation. The model layer
+' (epanetparser_model_layer.puml) calls into this and holds none of it.
+'
+' A rule failure never raises. A rule that raises anything other than
+' AssertionError is itself defective and raises RuleExecutionError
+' instead, because a broken rule reporting nothing would let an
+' invalid model pass.
+' =====================================================================
+
+title EPANET Parser - Validation Engine
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 50
+skinparam ranksep 45
+skinparam shadowing false
+hide empty members
+
+legend right
+  |<#lavender> Selection |
+  |<#lightblue> Execution |
+  |<#lightyellow> Results |
+  |<#pink> Errors |
+endlegend
+
+' ---------------------------------------------------------------------
+' SELECTION
+' ---------------------------------------------------------------------
+class ValidationContext #lavender {
+  + ruleset_keys() -> Tuple[str, ...]
+  --
+  + from_any(selection) -> ValidationContext
+  --
+  Rule set selection. Accepts a key, a
+  sequence of keys, a context, or a
+  mapping with core and custom entries.
+}
+
+class RuleSetRegistry #lavender {
+  + discover(refresh) -> Dict[str, RuleSet]
+  + resolve(selection) -> Validator
+  + get(key) -> RuleSet
+  + keys() / all() -> List
+  + core_keys() / custom_keys() -> List
+  + describe(key) -> str
+  --
+  Scans the packages named under
+  rule_set_discovery plus the
+  epanetparser.rulesets entry point
+  group. Configured packages win a key
+  collision. Results are cached.
+}
+
+class RuleSet <<frozen>> #lavender {
+  + key / name / version
+  + description / is_core
+  + module_path
+  --
+  + component_rules: Tuple[RuleSpec, ...]
+  + network_rules: Tuple[RuleSpec, ...]
+  --
+  Built from a module's __key__,
+  __ruleset_name__, __version__,
+  __description__ and __is_core__.
+  Rules are collected once at
+  construction, so selecting a rule set
+  repeatedly is cheap.
+}
+
+class RuleSpec <<frozen>> #lavender {
+  + rule_id: str
+  + func: Callable[..., Any]
+  + component_type: Optional[str]
+  + severity: Severity
+  + code: Optional[str]
+  + attribute: Optional[str]
+  + description
+  + is_network: bool
+  + context
+  --
+  + applies_to(component) -> bool
+  + issue_context() -> Dict
+  --
+  A rule function and the metadata used
+  to report its failures. component_type
+  is None for network-level rules.
+}
+
+class Validator #lavender {
+  + ruleset_keys() -> Tuple[str, ...]
+  + from_context(context) -> Validator
+  + rules_for(component) -> List
+  --
+  + validate(network, context)
+  + validate_component(component, rules)
+  + validate_network(network, rules)
+  --
+  Holds the selected rule sets. A
+  Validator is cached per context, so
+  equal contexts reuse one instance
+  rather than rescanning rule sets for
+  every component.
+}
+
+' ---------------------------------------------------------------------
+' EXECUTION
+' ---------------------------------------------------------------------
+class NetworkIndex #lightblue {
+  + nodes / links / curves / patterns
+  + sources / controls
+  --
+  + collection(name)
+  + has(name)
+  + curves_of_type(name)
+  + duplicates(collection)
+  + counts() -> Dict[str, int]
+  --
+  Name resolution for network rules.
+  Built and cached by the engine before
+  any network rule runs, so a rule can
+  ask whether a referenced name exists.
+}
+
+note as Order
+  **Three stages, in this order.**
+  ..
+  1. Component rules, collection by
+     collection.
+  2. Network rules, with the index
+     available for resolving references.
+  3. Each AssertionError becomes a
+     ValidationIssue.
+  ..
+  The order is what makes a report
+  readable.
+end note
+
+' ---------------------------------------------------------------------
+' RESULTS
+' ---------------------------------------------------------------------
+class ValidationReport #lightyellow {
+  + is_valid: bool
+  --
+  + errors / warnings / info -> List
+  + by_severity(severity) -> List
+  + by_code(code) -> List
+  + by_rule(rule_id) -> List
+  + by_component(name) -> List
+  + codes() -> List[str]
+  + grouped_by_component() -> Dict
+  + grouped_by_severity() -> Dict
+  + as_dict() -> Dict
+  --
+  + add(issue) / extend(issues)
+  --
+  is_valid is False only when some
+  finding is Severity.ERROR. Warnings
+  inform without blocking.
+}
+
+class ValidationIssue <<frozen>> #lightyellow {
+  + code: str
+  + message: str
+  + severity: Severity = ERROR
+  + rule_id: str
+  + ruleset_key: str
+  + component_type / component_name
+  + attribute
+  + context: Dict[str, Any]
+  --
+  + is_error() / is_warning() / is_info()
+  + as_dict() -> Dict
+  --
+  One finding. The code is part of the
+  public API, so downstream tooling
+  matches on it rather than on
+  message text.
+}
+
+enum Severity #lightyellow {
+  ERROR
+  WARNING
+  INFO
+}
+
+' ---------------------------------------------------------------------
+' ERRORS
+' ---------------------------------------------------------------------
+class RuleExecutionError #pink {
+  + message
+  + **context
+  --
+  Raised when a rule raises anything
+  other than AssertionError. A defect
+  in the rule, not a finding about the
+  model.
+}
+
+class RuleViolation #pink {
+  --
+  AssertionError subtype. How a rule
+  signals failure: raise it, normally
+  via assert.
+}
+
+class RuleSetSelectionError #pink {
+  --
+  ValueError subtype. Raised when a
+  named rule set was not discovered, so
+  a typo fails loudly instead of
+  validating less than asked.
+}
+
+' ---------------------------------------------------------------------
+' RELATIONSHIPS
+' ---------------------------------------------------------------------
+ValidationContext ..> RuleSetRegistry : resolved by
+RuleSetRegistry ..> RuleSet : discovers
+RuleSet *-- RuleSpec : collects
+
+Validator ..> RuleSet : holds
+Validator ..> ValidationContext : from_context
+Validator ..> RuleSpec : runs
+Validator ..> NetworkIndex : builds
+Validator ..> ValidationReport : returns
+
+RuleSpec ..> Severity : severity
+ValidationReport o-- ValidationIssue : aggregates
+ValidationIssue ..> Severity : severity
+
+Validator ..> Order
+Validator ..> RuleExecutionError : raises
+RuleSpec <|-- RuleViolation : signals via
+RuleSetRegistry ..> RuleSetSelectionError : raises
+
+@enduml
