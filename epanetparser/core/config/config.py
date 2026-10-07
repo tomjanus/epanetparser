@@ -64,7 +64,6 @@ class Config(Mapping[str, Any]):
     
     Examples
     --------
-    >>> config = Config.from_file("config.yaml")
     >>> config["example_section"]
     {'key1': ['value1'], ...}
     """
@@ -121,35 +120,28 @@ class Config(Mapping[str, Any]):
         key: value
         """
         return yaml.safe_dump(dict(self._data), sort_keys=False)
-        
-    @classmethod
-    def from_file(cls, path: str | Path) -> Config:
-        """Load configuration from a YAML file.
+
+    def to_file(self, path: str | Path) -> None:
+        """Write the configuration to a YAML file.
 
         Parameters
         ----------
         path
-            Path to the YAML configuration file.
-
-        Returns
-        -------
-        Config
-            Loaded configuration.
+            Path to the output YAML file.
 
         Raises
         ------
-        ConfigError
-            If the file cannot be read or the root element is not a mapping.
+        OSError
+            If the file cannot be written.
+        
+        Examples
+        --------
+        >>> config = Config.from_dict({'key': 'value'})
+        >>> config.to_file("output.yaml")
         """
         path = Path(path)
-        try:
-            with path.open("r", encoding="utf8") as f:
-                data = yaml.safe_load(f) or {}
-        except OSError as err:
-            raise ConfigError(f"Unable to read '{path}'.") from err
-        except yaml.YAMLError as err:
-            raise ConfigError(f"Invalid YAML in '{path}'.") from err
-        return cls(data)
+        with path.open("w", encoding="utf8") as f:
+            yaml.safe_dump(dict(self._data), f, sort_keys=False)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Config:
@@ -244,7 +236,3 @@ class Config(Mapping[str, Any]):
         >>> db = config.instantiate('database', DatabaseConfig)  # doctest: +SKIP
         """
         return cls.from_dict(self.section(key))
-
-
-if __name__ == "__main__":
-    pass

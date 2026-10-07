@@ -5,9 +5,16 @@
 # sets `__is_core__ = True`, and custom otherwise. Exactly one core rule set may
 # be selected for a validation run; any number of custom ones may be added.
 rule_set_discovery:
+  # The configuration merge substitutes lists rather than extending them, so
+  # `packages` REPLACES the defaults below rather than appending to them:
+  # anything omitted here is omitted from the configured list. `extra_packages`
+  # APPENDS to the search list after it, and is the additive form to use when
+  # adding your own package. The built-in packages are always searched, and
+  # searched first, so the core rule set is never lost to a shorter `packages`.
   packages:
     - epanetparser.core_rules
     - epanetparser.custom_rules
+  extra_packages: []
 
 logging:
   level: INFO
