@@ -38,10 +38,10 @@ Examples
 64
 """
 from __future__ import annotations
-
+import pathlib
+import importlib.resources as resources
 from typing import Any, Optional, Tuple
 import hashlib
-
 from epanetparser.core.validation.introspection import (
     MethodInfo,
     discover_classes,
@@ -63,6 +63,93 @@ __all__ = [
     "raiseorpush",
     "sha256digest",
 ]
+
+
+APPLICATION_NAME: str = 'epanetparser'
+
+def ensure_directory_exists(file_path: pathlib.Path) -> None:
+    """Ensure that the directory path to a file exists, creating it if necessary.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the file for which the directory should be ensured.
+
+    Notes
+    -----
+    This function creates all parent directories in the path if they don't exist.
+    It uses parents=True and exist_ok=True to avoid errors if directories already exist.
+    """
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def get_package_file(*folders: str) -> pathlib.Path:
+    """Import package data using importlib functionality.
+
+    Parameters
+    ----------
+    *folders : str
+        Variable number of strings representing path components to the packaged data file.
+
+    Returns
+    -------
+    pathlib.Path
+        An OS-independent path to the data file.
+
+    Examples
+    --------
+    >>> get_package_file('data', 'config.yaml')
+    PosixPath('/path/to/hydroforge/data/config.yaml')
+    """
+    # importlib.resources has files(), so use that:
+    pkg = resources.files(APPLICATION_NAME)
+    pkg = pkg.joinpath("/".join(folders))
+    return pkg.resolve()
+
+
+def get_package_root() -> pathlib.Path:
+    """Find the root folder of the package using importlib.resources (Python 3.9+).
+
+    Returns
+    -------
+    pathlib.Path
+        The root directory of the HydroForge package.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the package root directory cannot be located.
+
+    Notes
+    -----
+    The function looks for common project indicators (setup.py, pyproject.toml, etc.)
+    to verify the correct root directory is found.
+    """
+    # Get the path to the 'hydroforge' package
+    try:
+        pkg = resources.files('hydroforge')
+        hydroforge_package_dir = pkg.resolve()
+        
+        # The package directory is in src/hydroforge, so go up two levels to get to project root
+        package_root = hydroforge_package_dir.parent.parent
+        
+        # Verify this is the correct root by checking for common project files
+        project_indicators = ['setup.py', 'setup.cfg', 'pyproject.toml', 'requirements.txt', '.git']
+        if any((package_root / indicator).exists() for indicator in project_indicators):
+            return package_root
+            
+        raise FileNotFoundError(
+            f"Could not find the '{APPLICATION_NAME.upper()}' package root directory. "
+            "Ensure you are running this script from within the package.")
+    except (AttributeError, ImportError) as exception:
+        # Fallback for older importlib.resources API
+        if hasattr(resources, 'path'):
+            with resources.path(hydroforge, '__init__.py') as init_path:
+                hydroforge_package_dir = init_path.parent
+                return hydroforge_package_dir.parent.parent
+        raise FileNotFoundError(
+            "Could not find the hydroforge package root directory. "
+            "Ensure you are running this script from within the package.") from exception
 
 
 class raiseorpush:  # pylint: disable=invalid-name
