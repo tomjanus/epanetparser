@@ -142,7 +142,7 @@ class TestRenderingValidationIssues:
             ]
         )
         output = captured(lambda: write_results("Net1.json", results=report))
-        assert "Results for 'Net1.json'" in output
+        assert "Parser results for 'Net1.json'" in output
         assert "2 errors" in output
         assert "1 warning" in output
 
@@ -240,7 +240,7 @@ class TestRenderingStructuralProblems:
     def test_a_structural_problem_is_rendered(self, captured, structural):
         """The component and the message both appear in the output."""
         output = captured(lambda: write_results("broken.json", structural, None))
-        assert "Results for 'broken.json'" in output
+        assert "Parser results for 'broken.json'" in output
         assert "1 error" in output
         assert "must be a list of WNTREPANETNode" in output
 

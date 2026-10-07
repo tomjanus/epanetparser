@@ -24,6 +24,13 @@ The CLI runs in a subprocess rather than in-process because it calls
 ``sys.exit`` and reconfigures logging and the console, both of which are
 process-global. Running it out of process keeps the test session's state clean
 and exercises the module exactly as ``epanetparser`` on a user's PATH would.
+
+Every subprocess gets a throwaway ``XDG_CONFIG_HOME``. The CLI reads an optional
+user configuration file, and inheriting the developer's real one would make
+these tests depend on their home directory: a stale or hand-edited file there
+would change the rule sets discovered, and a malformed one would make the whole
+package fail to import. A test asserting machine-readable output must not be
+decidable by whatever happens to sit in ``~/.config``.
 """
 import json
 import subprocess
@@ -40,15 +47,42 @@ VALID_MILP = "tests/data/valid_network_milp_ruleset.json"
 INVALID_MILP = "tests/data/invalid_network_milp_ruleset.json"
 
 
-def run(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
+@pytest.fixture(autouse=True)
+def isolated_user_config(tmp_path, monkeypatch):
+    """Keep every CLI subprocess away from the developer's user configuration.
+
+    A ``subprocess.run`` with no ``env`` inherits this process's environment, so
+    setting the variables here is enough: each subprocess below searches an
+    empty temporary directory, finds no user config, and falls back to the
+    package defaults, exactly as on a machine that never configured anything.
+
+    ``XDG_CONFIG_HOME`` is what ``platformdirs`` consults on Linux and
+    ``APPDATA`` on Windows and macOS, so both are redirected. The logging
+    override is cleared as well, so a developer who exports
+    ``EPANETPARSER_LOG_LEVEL=DEBUG`` cannot push log records onto stdout and
+    break the JSON tests.
+    """
+    config_home = tmp_path / "config"
+    config_home.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("APPDATA", str(config_home))
+    monkeypatch.delenv("EPANETPARSER_LOG_LEVEL", raising=False)
+    monkeypatch.delenv("EPANETPARSER_CONSOLE_LEVEL", raising=False)
+    return config_home
+
+
+def run(*args: str, env=None, timeout: int = 180) -> subprocess.CompletedProcess:
     """Run the validate subcommand in a subprocess.
 
     Parameters
     ----------
     *args : str
         Command-line arguments after ``validate``.
+    env : dict or None
+        Environment for the child. Pass :func:`cli_env` to keep the subprocess
+        from reading the developer's user configuration.
     timeout : int
-        Seconds to allow before giving up.
+        Seconds to wait before giving up.
 
     Returns:
         subprocess.CompletedProcess: The finished process, with output captured
@@ -61,18 +95,22 @@ def run(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
         text=True,
         timeout=timeout,
         check=False,
+        env=env,
     )
 
 
-def convert(*args: str, timeout: int = 600) -> subprocess.CompletedProcess:
+def convert(*args: str, env=None, timeout: int = 600) -> subprocess.CompletedProcess:
     """Run the convert subcommand in a subprocess.
 
     Parameters
     ----------
     *args : str
         Command-line arguments after ``convert``.
+    env : dict or None
+        Environment for the child. Pass :func:`cli_env` to keep the subprocess
+        from reading the developer's user configuration.
     timeout : int
-        Seconds to allow before giving up. Conversion reads and writes a model
+        Seconds to wait before giving up. Conversion reads and writes a model
         with WNTR, which is slower than validation.
 
     Returns:
@@ -86,6 +124,7 @@ def convert(*args: str, timeout: int = 600) -> subprocess.CompletedProcess:
         text=True,
         timeout=timeout,
         check=False,
+        env=env,
     )
 
 

@@ -311,8 +311,9 @@ platform-specific location:
 * Windows: ``%APPDATA%\\epanetparser\\default_config.yaml``
 
 Your settings are merged with the package defaults, with yours taking
-precedence. The rule set search paths live under ``rule_set_discovery``, and
-this file, not ``pyproject.toml``, is the single source of truth for them:
+precedence, and the merge is recursive: a file need only set the keys it wants
+to change. The rule set search paths live under ``rule_set_discovery``, and this
+file, not ``pyproject.toml``, is the single source of truth for them:
 
 .. code-block:: yaml
 
@@ -320,3 +321,18 @@ this file, not ``pyproject.toml``, is the single source of truth for them:
       packages:
         - epanetparser.core_rules
         - epanetparser.custom_rules
+      extra_packages: []
+
+Add your own package under ``extra_packages``. The merge substitutes lists
+rather than extending them, so ``packages`` replaces the list above while
+``extra_packages`` appends to it. The built-in packages are always searched
+first, so a shorter ``packages`` cannot drop the core rule set.
+
+.. code-block:: yaml
+
+    rule_set_discovery:
+      extra_packages:
+        - my_project.rulesets
+
+A malformed file is reported with its path and line rather than ignored, so a
+typo fails loudly instead of silently reverting you to the defaults.

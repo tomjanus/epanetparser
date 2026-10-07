@@ -634,8 +634,20 @@ class Validator:
             spec.func(target)
         except AssertionError as err:
             context = Validator._issue_context(spec, ruleset, target, base_context)
+            
+            # Capture component data for network elements (not network-level rules)
+            component_data = {}
+            if not spec.is_network:
+                component_data = getattr(target, "data", {}) or {}
+            
             if isinstance(err, RuleViolation):
                 context.update(err.context)
+                # Override with RuleViolation's structured data if provided
+                if err.failing_fields:
+                    context["failing_fields"] = err.failing_fields
+                if err.component_data:
+                    component_data = err.component_data
+            
             report.add(
                 ValidationIssue(
                     code=spec.code,
@@ -648,6 +660,7 @@ class Validator:
                     ),
                     component_name=_target_name(target),
                     attribute=spec.attribute,
+                    component_data=component_data,
                     context=context,
                 )
             )

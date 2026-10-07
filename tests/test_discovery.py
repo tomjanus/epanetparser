@@ -30,7 +30,7 @@ classes, because the component classes deliberately carry no ``rule_*`` or
 import pytest
 from types import ModuleType
 
-from epanetparser.core.discovery import (
+from epanetparser.core.validation.introspection import (
     discover_classes,
     discover_methods_in_class,
     get_rule_methods,

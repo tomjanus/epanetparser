@@ -22,8 +22,7 @@ Examples
 >>> registry.get("advanced").rule_count
 5
 """
-from epanetparser.core.decorators import match
-from epanetparser.core.validation import RuleViolation, network_rule, rule
+from epanetparser.core.validation import match, RuleViolation, network_rule, rule
 
 #: Stable key of this ruleset.
 __key__ = "advanced"

@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin
 
-from epanetparser.core.decorators import extract_quick_description
+from epanetparser.core.validation.decorators import extract_quick_description
 from epanetparser.core.validation.results import Severity
 
 __all__ = [
@@ -343,13 +343,13 @@ def rule(
     ``@match`` must be the outermost decorator so that it wraps the function
     the engine calls.
 
-    Examples
+Examples
     --------
-    >>> from epanetparser.core.decorators import match
+    >>> from epanetparser.core.validation import match
     >>> @rule("WNTREPANETNode", attribute="diameter")
     ... @match("Tank")
     ... def rule_tank_has_diameter(tank) -> None:
-    ...     \"\"\"A tank must define a diameter.\"\"\"
+    ...     '''A tank must define a diameter.'''
     ...     assert tank.data.get("diameter") is not None, "Tank has no diameter"
     >>> spec = rule_tank_has_diameter.__epanetparser_rule__
     >>> spec.code
@@ -449,6 +449,12 @@ class RuleViolation(AssertionError):
     ----------
     message : str
         Human-readable description of the violation.
+    failing_fields : Optional[List[str]]
+        List of field names that failed validation (e.g., ["pump_curve_name"]).
+        Used for structured reporting.
+    component_data : Optional[Dict[str, Any]]
+        Full component data dictionary. If provided, this overrides the
+        automatically captured data from the target.
     **context : Any
         Arbitrary contextual metadata, for example the name that could not be
         resolved. Keys should be short and stable.
@@ -466,16 +472,80 @@ class RuleViolation(AssertionError):
     ...     for pump in network.links:
     ...         curve = pump.data.get("pump_curve_name")
     ...         if curve and curve not in network.index.curves:
-    ...             raise RuleViolation("Unknown pump curve", curve=curve)
+    ...             raise RuleViolation(
+    ...                 "Unknown pump curve",
+    ...                 failing_fields=["pump_curve_name"],
+    ...                 component_data=pump.data,
+    ...                 curve=curve,
+    ...                 pump=pump.name
+    ...             )
     """
 
-    def __init__(self, message: str, **context: Any) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        failing_fields: Optional[List[str]] = None,
+        component_data: Optional[Dict[str, Any]] = None,
+        **context: Any,
+    ) -> None:
         super().__init__(message)
         self.context: Dict[str, Any] = context
+        self.failing_fields: List[str] = failing_fields or []
+        self.component_data: Dict[str, Any] = component_data or {}
+
+
+def _is_implicit_rule(func: Callable[..., Any]) -> bool:
+    """Check if a function follows the implicit rule naming convention."""
+    name = func.__name__
+    return name.startswith("rule_") or name.startswith("warn_")
+
+
+def _is_implicit_network_rule(func: Callable[..., Any]) -> bool:
+    """Check if a function follows the implicit network rule naming convention.
+    
+    Network rules must use @network_rule decorator explicitly since there's
+    no naming convention to distinguish them from component rules.
+    """
+    return False
+
+
+def _create_implicit_spec(func: Callable[..., Any]) -> RuleSpec:
+    """Create a RuleSpec for an implicitly discovered rule function."""
+    name = func.__name__
+    severity = Severity.WARNING if name.startswith("warn_") else Severity.ERROR
+    component_type = _target_name(func)
+    
+    # Get description from @described decorator or docstring
+    description = getattr(func, "description", "") or extract_quick_description(func) or name
+    
+    # Check if function has @match decorator applied (it wraps the function)
+    # The match decorator adds a __wrapped__ attribute pointing to the original
+    wrapped = getattr(func, "__wrapped__", func)
+    
+    spec = RuleSpec(
+        rule_id=name,
+        func=func,
+        component_type=component_type,
+        severity=severity,
+        code="",
+        attribute=None,
+        description=description,
+        is_network=False,
+    )
+    return spec
 
 
 def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
     """Collect the rules declared in a module.
+
+    Rules can be declared in two ways:
+    
+    1. Explicit: using ``@rule`` or ``@network_rule`` decorators (backward compatible)
+    2. Implicit: functions named ``rule_*`` (error) or ``warn_*`` (warning) 
+       are auto-discovered. Component type inferred from type annotation.
+    
+    Network-level rules must use ``@network_rule`` explicitly.
 
     Parameters
     ----------
@@ -508,20 +578,34 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
     for name, value in sorted(vars(module).items()):
         if not callable(value):
             continue
+        
+        # Check for explicit decorators first (backward compatibility)
         spec = getattr(value, RULE_ATTRIBUTE, None)
         is_network = False
         if spec is None:
             spec = getattr(value, NETWORK_RULE_ATTRIBUTE, None)
             is_network = True
-        if spec is None:
-            continue
-        if getattr(spec.func, "__module__", module.__name__) != module.__name__:
-            # Re-exported from another module; that module collects it.
-            continue
-        if spec.is_network or is_network:
-            network_rules.append(spec)
-        else:
-            component_rules.append(spec)
+        
+        if spec is not None:
+            # Explicit decorator found
+            if getattr(spec.func, "__module__", module.__name__) != module.__name__:
+                # Re-exported from another module; that module collects it.
+                continue
+            if spec.is_network or is_network:
+                network_rules.append(spec)
+            else:
+                component_rules.append(spec)
+        elif _is_implicit_rule(value):
+            # Implicit discovery: rule_* or warn_* function
+            if getattr(value, "__module__", module.__name__) != module.__name__:
+                # Re-exported from another module; that module collects it.
+                continue
+            if _is_implicit_network_rule(value):
+                network_rules.append(_create_implicit_spec(value))
+            else:
+                component_rules.append(_create_implicit_spec(value))
+        # Otherwise not a rule function, skip
+    
     _reject_duplicates(component_rules, "component", module)
     _reject_duplicates(network_rules, "network", module)
     component_rules.sort(key=lambda spec: spec.rule_id)

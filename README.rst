@@ -395,8 +395,7 @@ A **rule set** is a module declaring ``__key__``, ``__ruleset_name__`` and
 
 .. code-block:: python
 
-    from epanetparser.core.decorators import match
-    from epanetparser.core.validation import network_rule, rule
+    from epanetparser.core.validation import match, network_rule, rule
 
     __key__ = "my_project"
     __ruleset_name__ = "My project's rules"
@@ -575,8 +574,11 @@ location, and merges your settings over the package defaults:
 * Windows: ``%APPDATA%\\epanetparser\\default_config.yaml``
 
 Rule set search paths live under ``rule_set_discovery`` in that file, which is the
-single source of truth. The ``[tool.epanetparser]`` section of ``pyproject.toml`` is
-not read by the code.
+single source of truth. Add your own package under ``extra_packages``; the merge
+substitutes lists rather than extending them, so ``packages`` replaces the
+built-in list while ``extra_packages`` appends to it, and the built-in packages
+are always searched first. The ``[tool.epanetparser]`` section of
+``pyproject.toml`` is not read by the code.
 
 Contributing
 ------------

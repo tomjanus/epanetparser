@@ -1,4 +1,4 @@
-"""Shared rule set discovery for core and custom rule sets.
+"""Rule set discovery for core and custom rule sets.
 
 Core rule sets and custom rule sets are discovered by exactly the same code.
 The only difference between them is module metadata: a rule set module declares
@@ -29,6 +29,8 @@ import pkgutil
 from types import ModuleType
 from typing import Dict, Iterable, List, Optional, Sequence
 
+import yaml
+
 from epanetparser.core.logger_setup import get_logger
 
 logger = get_logger(__name__, level="WARNING")
@@ -38,6 +40,12 @@ REQUIRED_METADATA = ("__key__", "__ruleset_name__", "__version__")
 
 #: Entry point group third-party rule sets may register under.
 ENTRY_POINT_GROUP = "epanetparser.rulesets"
+
+#: Rule set packages that are always searched, ahead of any configured entry.
+_BUILTIN_PACKAGES = (
+    "epanetparser.core_rules",
+    "epanetparser.custom_rules",
+)
 
 __all__ = [
     "ENTRY_POINT_GROUP",
@@ -63,8 +71,11 @@ def default_packages() -> List[str]:
 
     Notes
     -----
-    The search paths come from the ``rule_set_discovery.packages`` section of
-    ``default_config.yaml`` when it is present, and fall back to this list.
+    The search paths come from the ``rule_set_discovery`` section of
+    ``default_config.yaml``, always merged with the built-in packages.
+    ``packages`` replaces the defaults in the merged configuration, and
+    ``extra_packages`` is appended after it; the built-in packages are searched
+    first either way, so the core rule set is never dropped.
 
     Examples
     --------
@@ -72,26 +83,55 @@ def default_packages() -> List[str]:
     ['epanetparser.core_rules', 'epanetparser.custom_rules']
     """
     configured = _configured_packages()
-    return configured or [
-        "epanetparser.core_rules",
-        "epanetparser.custom_rules",
-    ]
+    return configured or list(_BUILTIN_PACKAGES)
 
 
 def _configured_packages() -> Optional[List[str]]:
-    """Read the rule set search paths from user or package configuration."""
-    try:
-        from epanetparser.core.config.manager import ConfigManager
+    """Read the rule set search paths from user or package configuration.
 
-        config = ConfigManager().load()
+    Returns
+    -------
+    Optional[List[str]]
+        The built-in packages, then ``rule_set_discovery.packages``, then
+        ``rule_set_discovery.extra_packages``; deduplicated with order
+        preserved. None when no configuration could be read.
+
+    Notes
+    -----
+    ``rule_set_discovery.packages`` REPLACES the default list, because the
+    configuration merge substitutes lists rather than extending them. A user
+    file that therefore lists only its own package would silently drop the core
+    rule set, so the built-in packages seed the search list here instead:
+    ``extra_packages`` is the additive form, and the built-ins keep their
+    precedence over a user entry that redeclares one of them.
+
+    Examples
+    --------
+    With ``rule_set_discovery.extra_packages: [my_own_pkg]``:
+
+    >>> _configured_packages()  # doctest: +SKIP
+    ['epanetparser.core_rules', 'epanetparser.custom_rules', 'my_own_pkg']
+    """
+    try:
+        from epanetparser.core.config.manager import ConfigLoader
+
+        config = ConfigLoader().load()
         section = config.get("rule_set_discovery", {}) or {}
-    except Exception as err:  # pragma: no cover - configuration is optional
+    except (ImportError, OSError, yaml.YAMLError) as err:  # pragma: no cover
         logger.debug("Falling back to default rule set packages: %s", err)
         return None
-    packages = section.get("packages") if isinstance(section, dict) else None
-    if isinstance(packages, (list, tuple)) and packages:
-        return [str(package) for package in packages]
-    return None
+    if not isinstance(section, dict):
+        return None
+    packages = list(_BUILTIN_PACKAGES) + _string_list(section.get("packages"))
+    packages += _string_list(section.get("extra_packages"))
+    return list(dict.fromkeys(packages))
+
+
+def _string_list(value: object) -> List[str]:
+    """Return ``value`` as a list of strings, or an empty list if it is not one."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item) for item in value]
 
 
 def missing_metadata(module: ModuleType) -> List[str]:
@@ -121,7 +161,7 @@ def _import(path: str) -> Optional[ModuleType]:
     importlib.invalidate_caches()
     try:
         return importlib.import_module(path)
-    except Exception as err:
+    except (ImportError, RuntimeError) as err:
         logger.warning("Failed to import rule set module '%s': %s", path, err)
         return None
 
@@ -275,13 +315,13 @@ def entry_point_modules(
     modules: Dict[str, ModuleType] = {}
     try:
         selected: Iterable = entry_points().select(group=group)
-    except Exception as err:  # pragma: no cover - depends on installed metadata
+    except (OSError, RuntimeError, ValueError) as err:  # pragma: no cover
         logger.warning("Failed to read entry point group '%s': %s", group, err)
         return modules
     for entry_point in selected:
         try:
             modules[entry_point.name] = entry_point.load()
-        except Exception as err:
+        except (ImportError, RuntimeError) as err:
             logger.warning(
                 "Failed to load rule set entry point '%s': %s", entry_point.name, err
             )

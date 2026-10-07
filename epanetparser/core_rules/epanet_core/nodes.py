@@ -7,9 +7,7 @@ diameter.
 A rule whose name begins with ``warn_`` reports at ``Severity.WARNING`` unless
 it says otherwise, so a missing coordinate is a finding but not a failure.
 """
-from epanetparser.core.decorators import match
-from epanetparser.core.validation import defined as _defined
-from epanetparser.core.validation import rule
+from epanetparser.core.validation import match, defined as _defined, rule
 
 NODE = "WNTREPANETNode"
 

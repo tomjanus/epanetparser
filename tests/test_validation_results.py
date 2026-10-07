@@ -131,10 +131,12 @@ class TestValidationIssue:
             "component_type",
             "component_name",
             "attribute",
+            "component_data",
             "context",
         }
         assert payload["severity"] == "ERROR"
         assert payload["context"] == {"reference": "P1"}
+        assert payload["component_data"] == {}
         json.dumps(payload)  # must not raise
 
     def test_as_dict_copies_context(self):

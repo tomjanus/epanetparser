@@ -1,24 +1,9 @@
-"""Decorators for EPANET component validation.
+"""Decorators for EPANET validation rules.
 
 This module provides lightweight decorators for validation rules.
-Separated to avoid circular imports with utils and epanettypes.
-
-Functions
----------
-extract_quick_description
-    Extract brief description from a function's docstring.
-described
-    Decorator to add a 'description' attribute to a function based on its docstring.
-match
-    Decorator to apply validation rules only to components of a specific type.
-    
-Classes
--------
-DescribedCallable
-    Protocol for a callable with a 'description' attribute.
 """
+
 from typing import Any, Protocol, ParamSpec, TypeVar, Optional, cast, overload
-from enum import Enum
 from dataclasses import dataclass
 import inspect
 from collections.abc import Callable
@@ -29,58 +14,8 @@ F = TypeVar('F', bound=Callable[..., Any])
 P = ParamSpec("P")
 R = TypeVar("R")
 
-class RuleType(str, Enum):
-    """Enumeration of rule severities used by validation decorators.
-
-    Attributes
-    ----------
-    ERROR : str
-        Indicates that a rule violation should be treated as an error.
-    WARNING : str
-        Indicates that a rule violation should be treated as a warning.
-    """
-
-    ERROR = "error"
-    WARNING = "warning"
-
 
 @dataclass(frozen=True)
-class RuleMetadata:
-    """Container for metadata attached to a registered validation rule.
-
-    Attributes
-    ----------
-    component_type : str
-        Component type this rule applies to (for example, ``Junction``).
-    rule_type : RuleType
-        Severity classification for the rule.
-    name : str or None
-        Optional explicit rule name used for registration and replacement.
-    replace : bool
-        Whether this rule should replace an existing rule with the same name.
-    """
-
-    component_type: str
-    rule_type: RuleType
-    name: str | None
-    replace: bool = False
-
-
-class RuleMethod(Protocol[P, R]):
-    """Protocol describing a callable rule with attached registration metadata.
-
-    Attributes
-    ----------
-    __rule_metadata__ : RuleMetadata
-        Metadata populated by :func:`register_rule`.
-    """
-
-    __rule_metadata__: RuleMetadata
-
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
-        ...
-        
-
 class DescribedCallable(Protocol[P, R]):
     """
     Protocol for a callable that carries a human-readable description.
@@ -98,41 +33,6 @@ class DescribedCallable(Protocol[P, R]):
         ...
 
 
-class DescribedRuleMethod(
-    RuleMethod[P, R],
-    DescribedCallable[P, R],
-    Protocol[P, R],
-):
-    """Protocol combining descriptive and rule-registration metadata.
-
-    Notes
-    -----
-    This protocol is satisfied by callables that provide both a
-    ``description`` attribute and ``__rule_metadata__`` metadata.
-    """
-
-    pass
-
-
-def register_rule(
-    component_type: str,
-    rule_type: RuleType | str,
-    *,
-    name: str | None = None,
-    replace: bool = False):
-    """ Decorator to register a validation rule for a specific component type. """
-    rule_type = RuleType(rule_type)
-    def decorator(func: Callable[P, R]) -> RuleMethod[P, R]:
-        func.__rule_metadata__ = RuleMetadata(
-            component_type=component_type,
-            rule_type=rule_type,
-            name=name,
-            replace=replace,
-        ) # attach metadata
-        return cast(RuleMethod[P, R], func)
-    return decorator
-
-
 def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     """
     Extract a short human-readable description from a function docstring.
@@ -140,7 +40,7 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     Priority:
     1. RST-style ':summary:' field (if `use_summary=True`)
     2. First non-empty line of the docstring (PEP 257 style)
-    
+
     Parameters
     ----------
     func : Callable
@@ -148,12 +48,12 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     use_summary : bool, optional
         If True, attempts to extract a ':summary:' field from the docstring.
         If not found or False, falls back to the first docstring line.
-    
+
     Returns
     -------
     str
         Brief description, or empty string if no docstring exists.
-    
+
     Examples
     --------
     Standard docstring:
@@ -173,15 +73,15 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     ...     \"\"\"
     >>> extract_quick_description(f)
     'Ensure tank configuration is valid.'
-    
+
     Notes
     -----
     When `use_summary=True`, the function searches for a line matching the pattern
     `:summary: <text>` in the docstring. The text after the colon is extracted.
-    
+
     If no `:summary:` field is found or `use_summary=False`, the first line of
     the docstring is used, following PEP 257 and Numpy docstring conventions.
-    
+
     See Also
     --------
     get_rule_methods : Uses this function to extract rule descriptions
@@ -191,11 +91,11 @@ def extract_quick_description(func: Callable, use_summary: bool = True) -> str:
     if not doc:
         return ""
     if use_summary:
-        import re # pylint: disable=import-outside-toplevel
+        import re
         summary_match = re.search(r':summary:\s*(.+)', doc, re.IGNORECASE)
         if summary_match:
             return summary_match.group(1).strip()
-    first_line = doc.split('\n', maxsplit=1)[0] # Fall back to first line
+    first_line = doc.split('\n', maxsplit=1)[0]
     return first_line
 
 
@@ -248,14 +148,14 @@ def described(func_or_desc: Optional[Callable[P, R] | str] = None) -> Callable[[
 
 def match(typename: str, fuzzy: bool = False) -> Callable[[F], F]:
     """Decorator to apply validation rules only to components of a specific type.
-    
+
     This decorator wraps validation rule methods to execute only when the component's
     'type' attribute matches the specified typename. All comparisons are case-insensitive.
-    
+
     The decorated validation method will only execute when the instance's type matches
     the specified typename. If the type doesn't match, the method returns None without
     executing the validation logic.
-    
+
     Parameters
     ----------
     typename : str
@@ -264,23 +164,23 @@ def match(typename: str, fuzzy: bool = False) -> Callable[[F], F]:
     fuzzy : bool, default=False
         If True, match if typename appears anywhere in the component's type.
         If False, require exact match (case-insensitive).
-    
+
     Returns
     -------
     Callable[[F], F]
         Decorator function that wraps the validation method while preserving
         its signature and metadata.
-    
+
     Examples
     --------
     >>> @match('Junction')
     ... def rule_junction_has_elevation(self) -> None:
     ...     assert "elevation" in self.data, "Junction must have elevation"
-    
+
     >>> @match('Tank')
     ... def rule_tank_has_diameter(self) -> None:
     ...     assert "diameter" in self.data, "Tank must have diameter"
-    
+
     >>> @match('Valve', fuzzy=True)
     ... def rule_valve_check(self) -> None:
     ...     # Matches 'PRV', 'PSV', 'PBV', 'FCV', 'TCV', 'GPV' (any type containing 'valve')
@@ -307,5 +207,9 @@ def match(typename: str, fuzzy: bool = False) -> Callable[[F], F]:
     return type_wrapper
 
 
-if __name__ == "__main__":
-    pass
+__all__ = [
+    "DescribedCallable",
+    "extract_quick_description",
+    "described",
+    "match",
+]

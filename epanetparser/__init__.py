@@ -30,16 +30,19 @@ only structural problems; validation is called explicitly and returns a report.
 
 Configuration
 -------------
-On first import, epanetparser creates a user configuration file in your
+epanetparser reads an optional user configuration file from your
 platform-specific config directory:
 
 - Linux: ~/.config/epanetparser/default_config.yaml
 - macOS: ~/Library/Application Support/epanetparser/default_config.yaml
 - Windows: %APPDATA%\\epanetparser\\default_config.yaml
 
-You can customize settings by editing this file. Your changes will be merged
-with package defaults, with your settings taking precedence. The rule set
-search paths live here, under ``rule_set_discovery``.
+The file is not created for you. If it does not exist, or is empty, the package
+defaults are used unchanged. Create it to customise settings, setting only the
+keys you want to change: your settings are merged with the package defaults,
+with yours taking precedence. The rule set search paths live here, under
+``rule_set_discovery``; list your own package under ``extra_packages``, which
+appends, whereas ``packages`` replaces the built-in list.
 
 Command-Line Interface
 ----------------------

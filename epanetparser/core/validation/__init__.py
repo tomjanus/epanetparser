@@ -1,13 +1,13 @@
 """Explicit, registry-driven static validation for EPANET models.
 
-Static validation in epanetparser is a separate, explicit step. A model is
-parsed, and then validated by whichever rulesets the caller selects:
+In `epanetparser`, a model is first parsed from an input file, then validated 
+by one or more rulesets the caller selects:
 
 .. code-block:: text
 
     EPANET input -> Parser -> EPANET model -> Static validation -> Simulator
 
-Parsing builds the model and reports only structural problems. Validation is
+Parsing builds the model structure in a json-like format. Validation is
 simulator-agnostic, like a compiler's static checks: it knows what a
 well-formed EPANET model looks like, not what a particular solver can do with
 it. Constraints that belong to one application, such as an MILP pump
@@ -77,6 +77,7 @@ from epanetparser.core.validation.registry import (
     RuleSet,
     RuleSetRegistry,
     RuleSetSelectionError,
+    list_rulesets,
 )
 from epanetparser.core.validation.results import Severity, ValidationIssue, ValidationReport
 from epanetparser.core.validation.rules import (
@@ -87,6 +88,20 @@ from epanetparser.core.validation.rules import (
     defined,
     network_rule,
     rule,
+)
+from epanetparser.core.validation.decorators import (
+    DescribedCallable,
+    described,
+    extract_quick_description,
+    match,
+)
+from epanetparser.core.validation.introspection import (
+    FileInfo,
+    MethodInfo,
+    discover_classes,
+    discover_methods_in_class,
+    get_rule_methods,
+    get_warning_methods,
 )
 
 __all__ = [
@@ -111,9 +126,20 @@ __all__ = [
     "collect_rules",
     "default_packages",
     "defined",
+    "discover_classes",
+    "discover_methods_in_class",
     "discover_ruleset_modules",
+    "extract_quick_description",
+    "FileInfo",
+    "get_rule_methods",
     "get_validator",
+    "get_warning_methods",
+    "list_rulesets",
+    "match",
     "network_rule",
     "rule",
     "validate",
+    "described",
+    "MethodInfo",
+    "DescribedCallable",
 ]

@@ -89,13 +89,12 @@ Restricting a rule with ``match``
 
 Some rules apply to only one kind of component: a junction should not be asked
 for a tank diameter. The :func:`match` decorator narrows a rule accordingly. It
-is imported from :mod:`epanetparser.core.decorators`, and applied *below*
+is imported from :mod:`epanetparser.core.validation`, and applied *below*
 :func:`rule`:
 
 .. code-block:: python
 
-    from epanetparser.core.decorators import match
-    from epanetparser.core.validation import rule
+    from epanetparser.core.validation import match, rule
 
     @rule("WNTREPANETNode", code="E_NODE_ELEVATION_MISSING", attribute="elevation")
     @match("Junction")
@@ -209,11 +208,28 @@ the ``rule_set_discovery`` section of the configuration file:
       packages:
         - epanetparser.core_rules
         - epanetparser.custom_rules
+      extra_packages: []
+
+To add a package of your own, list it under ``extra_packages``:
+
+.. code-block:: yaml
+
+    rule_set_discovery:
+      extra_packages:
+        - my_project.rulesets
+
+The two keys differ deliberately. Your settings are merged with the package
+defaults, but that merge *substitutes* lists rather than extending them, so
+``packages`` **replaces** the list shown above while ``extra_packages``
+**appends** to it. The built-in packages are always searched, and searched
+first, so a shorter ``packages`` cannot drop the core rule set.
 
 That configuration file is the single source of truth. It is written to a
 platform-specific location on first import, and your settings are merged with
-the package defaults, with yours taking precedence. The ``[tool.epanetparser]``
-section of ``pyproject.toml`` is not read by the code.
+the package defaults, with yours taking precedence. Because the merge is
+recursive, you need only set the keys you want to change: a file containing
+nothing but ``logging: {level: DEBUG}`` leaves every other setting alone. The
+``[tool.epanetparser]`` section of ``pyproject.toml`` is not read by the code.
 
 A rule set published as a separate distribution can also register itself through
 the ``epanetparser.rulesets`` entry point group, which is scanned alongside the

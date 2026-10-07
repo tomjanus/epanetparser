@@ -112,6 +112,10 @@ class ValidationIssue:
         Name of the validated component, if it has one.
     attribute : Optional[str]
         Name of the attribute or field the rule is concerned with, if known.
+    component_data : Dict[str, Any]
+        Full data dictionary of the validated component (or empty for network
+        rules). This allows issues to be self-contained for reporting without
+        needing access to the original model.
     context : Dict[str, Any]
         Additional contextual metadata supplied by the engine or the rule.
 
@@ -145,6 +149,7 @@ class ValidationIssue:
     component_type: Optional[str] = None
     component_name: Optional[str] = None
     attribute: Optional[str] = None
+    component_data: Dict[str, Any] = field(default_factory=dict)
     context: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -174,7 +179,7 @@ class ValidationIssue:
         Dict[str, Any]
             Mapping with the issue ``code``, ``message``, ``severity``,
             ``rule_id``, ``ruleset_key``, ``component_type``,
-            ``component_name``, ``attribute`` and ``context``.
+            ``component_name``, ``attribute``, ``component_data`` and ``context``.
 
         Examples
         --------
@@ -190,6 +195,7 @@ class ValidationIssue:
             "component_type": self.component_type,
             "component_name": self.component_name,
             "attribute": self.attribute,
+            "component_data": dict(self.component_data),
             "context": dict(self.context),
         }
 

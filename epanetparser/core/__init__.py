@@ -61,7 +61,6 @@ try:
 except PackageNotFoundError:  # pragma: no cover - source checkout without install
     __version__ = "0.1.0"
 
-from epanetparser.core.decorators import described, match
 from epanetparser.core.display import (
     console,
     count_errors_warnings,
@@ -101,6 +100,8 @@ from epanetparser.core.validation import (
     network_rule,
     rule,
     validate,
+    described,
+    match,
 )
 
 __all__: List[str] = [

@@ -62,6 +62,7 @@ __all__ = [
     "RuleSet",
     "RuleSetRegistry",
     "RuleSetSelectionError",
+    "list_rulesets",
 ]
 
 
@@ -199,8 +200,28 @@ class RuleSet:
             "description": self.description,
             "is_core": self.is_core,
             "module_path": self.module_path,
-            "component_rules": [spec.rule_id for spec in self.component_rules],
-            "network_rules": [spec.rule_id for spec in self.network_rules],
+            "rule_count": self.rule_count,
+            "component_rules": [
+                {
+                    "rule_id": spec.rule_id,
+                    "code": spec.code,
+                    "severity": spec.severity.name,
+                    "component_type": spec.component_type,
+                    "description": spec.description,
+                    "attribute": spec.attribute,
+                }
+                for spec in self.component_rules
+            ],
+            "network_rules": [
+                {
+                    "rule_id": spec.rule_id,
+                    "code": spec.code,
+                    "severity": spec.severity.name,
+                    "description": spec.description,
+                    "attribute": spec.attribute,
+                }
+                for spec in self.network_rules
+            ],
         }
 
 
@@ -422,3 +443,37 @@ class RuleSetRegistry:
             if ruleset.description:
                 lines.append(f"      {ruleset.description}")
         return "\n".join(lines)
+
+
+def list_rulesets(packages: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+    """Return structured information for all discovered rulesets.
+
+    Parameters
+    ----------
+    packages : Optional[Sequence[str]]
+        Import paths of packages to search for rule sets. Defaults to
+        :func:`~epanetparser.core.validation.discovery.default_packages`.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        List of rule set summaries, each containing:
+        - key: Stable rule set key
+        - name: Human-readable name
+        - version: Version string
+        - description: Description
+        - is_core: Whether this is a core ruleset
+        - module_path: Import path of the defining module
+        - rule_count: Total number of rules
+        - component_rules: List of component rule details
+        - network_rules: List of network rule details
+
+    Examples
+    --------
+    >>> from epanetparser.core.validation import list_rulesets
+    >>> rulesets = list_rulesets()
+    >>> [rs["key"] for rs in rulesets]
+    ['epanet_core', 'milp']
+    """
+    registry = RuleSetRegistry(packages=packages)
+    return [rs.as_dict() for rs in registry.all()]

@@ -138,8 +138,10 @@ class TestRuleSet:
         payload = registry.get("advanced").as_dict()
         assert payload["key"] == "advanced"
         assert payload["is_core"] is False
-        assert "rule_node_name_is_j1" in payload["component_rules"]
-        assert "rule_pattern_present" in payload["network_rules"]
+        component_rule_ids = [r["rule_id"] for r in payload["component_rules"]]
+        network_rule_ids = [r["rule_id"] for r in payload["network_rules"]]
+        assert "rule_node_name_is_j1" in component_rule_ids
+        assert "rule_pattern_present" in network_rule_ids
 
     def test_from_module_rejects_a_non_ruleset(self):
         """A module without the required metadata is not a rule set."""

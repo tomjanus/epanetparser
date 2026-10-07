@@ -42,7 +42,7 @@ from __future__ import annotations
 from typing import Any, Optional, Tuple
 import hashlib
 
-from epanetparser.core.discovery import (
+from epanetparser.core.validation.introspection import (
     MethodInfo,
     discover_classes,
     discover_methods_in_class,

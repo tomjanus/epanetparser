@@ -29,7 +29,7 @@ from types import ModuleType
 
 import pytest
 
-from epanetparser.core.discovery import MethodInfo
+from epanetparser.core.validation.introspection import MethodInfo
 from epanetparser.core.epanettypes.exceptions import (
     WNTREPANETTypeValidationError,
     WNTREPANETTypeValidationErrorBundle,
@@ -232,12 +232,12 @@ class TestIntrospectionReexports:
 
     def test_helpers_are_the_same_objects(self):
         """Re-exporting does not wrap or copy, so identity is preserved."""
-        import epanetparser.core.discovery as discovery
+        import epanetparser.core.validation.introspection as introspection
 
-        assert get_rule_methods is discovery.get_rule_methods
-        assert get_warning_methods is discovery.get_warning_methods
-        assert discover_classes is discovery.discover_classes
-        assert discover_methods_in_class is discovery.discover_methods_in_class
+        assert get_rule_methods is introspection.get_rule_methods
+        assert get_warning_methods is introspection.get_warning_methods
+        assert discover_classes is introspection.discover_classes
+        assert discover_methods_in_class is introspection.discover_methods_in_class
 
     def test_get_rule_methods_returns_a_mapping(self, rules_class):
         """Rules are returned keyed by name."""

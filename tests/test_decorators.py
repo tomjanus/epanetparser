@@ -20,7 +20,7 @@ The suite covers:
 - Compatibility of @described with other decorators
 """
 import pytest
-from epanetparser.core.decorators import match, described
+from epanetparser.core.validation import match, described
 
 
 class MockComponent:

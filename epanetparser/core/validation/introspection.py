@@ -38,7 +38,7 @@ whether it was inherited.
 
 Examples
 --------
->>> from epanetparser.core.discovery import discover_classes
+>>> from epanetparser.core.validation.introspection import discover_classes
 >>> import epanetparser.core.epanettypes.link as link_module
 >>> [cls.__name__ for cls in discover_classes(link_module)]
 ['WNTREPANETLink']
@@ -53,7 +53,7 @@ from types import ModuleType
 
 from rich.panel import Panel
 from rich.text import Text
-from epanetparser.core.decorators import DescribedCallable, extract_quick_description
+from epanetparser.core.validation.decorators import DescribedCallable, extract_quick_description
 from epanetparser.core.logger_setup import get_logger
 
 if TYPE_CHECKING:
@@ -76,7 +76,7 @@ __all__ = [
 @dataclass
 class FileInfo:
     """Information about a Python file in a module or package.
-    
+
     Attributes
     ----------
     name : str
@@ -89,18 +89,18 @@ class FileInfo:
     name: str
     file_path: str
     module_path: str
-    
+
     def __repr__(self) -> str:
         """Return a developer-friendly representation."""
         return f"FileInfo(name={self.name!r}, file_path={self.file_path!r}, module_path={self.module_path!r})"
-    
+
     def __str__(self) -> str:
         """Return a simple string representation."""
         return f"📄 {self.name} ({self.module_path})"
-    
+
     def __rich__(self):
         """Return a rich representation for pretty printing.
-        
+
         Returns
         -------
         Panel
@@ -121,10 +121,11 @@ class FileInfo:
         """ Convert the FileInfo instance to a dictionary. """
         return asdict(self)
 
+
 @dataclass
 class MethodInfo:
     """Information about a method discovered in a class.
-    
+
     Attributes
     ----------
     method : Callable | DescribedCallable
@@ -143,7 +144,7 @@ class MethodInfo:
     signature: str
     origin: Optional[str] = None
     is_inherited: Optional[bool] = None
-    
+
     def __repr__(self) -> str:
         """Return a developer-friendly representation."""
         parts = [f"method={self.method.__name__!r}", f"signature={self.signature!r}"]
@@ -152,7 +153,7 @@ class MethodInfo:
         if self.is_inherited is not None:
             parts.append(f"is_inherited={self.is_inherited!r}")
         return f"MethodInfo({', '.join(parts)})"
-    
+
     def __str__(self) -> str:
         """Return a simple string representation."""
         method_name = self.method.__name__
@@ -162,10 +163,10 @@ class MethodInfo:
         if self.description:
             base += f"\n  {self.description}"
         return base
-    
+
     def __rich__(self):
         """Return a rich representation for pretty printing.
-        
+
         Returns
         -------
         Panel
@@ -186,7 +187,7 @@ class MethodInfo:
             content.append("\n\n")
             content.append(self.description, style="dim italic")
         return Panel(
-            content, 
+            content,
             title=f"[bold]Method: {method_name}[/bold]",
             border_style="yellow")
 
@@ -195,21 +196,19 @@ class MethodInfo:
         return asdict(self)
 
 
-
-
 def discover_classes(module: ModuleType) -> List[type]:
     """Discover all classes defined in a module.
-    
+
     Parameters
     ----------
     module : ModuleType
         The module to inspect for class definitions.
-    
+
     Returns
     -------
     List[type]
         List of all classes defined in the module (excludes imported classes).
-    
+
     Notes
     -----
     Only returns classes that are actually defined in the module
@@ -221,6 +220,7 @@ def discover_classes(module: ModuleType) -> List[type]:
         if _cls.__module__ == module.__name__
     ]
 
+
 def discover_methods_in_class(
     target_cls: type,
     prefix: Optional[str] = None,
@@ -228,7 +228,7 @@ def discover_methods_in_class(
     append_description: bool = False
 ) -> Dict[str, MethodInfo]:
     """Discover methods in a class, optionally filtered by prefix.
-    
+
     Parameters
     ----------
     target_cls : type
@@ -239,23 +239,23 @@ def discover_methods_in_class(
     local_only : bool, default=True
         If True, only return methods defined directly in `target_cls`.
         If False, includes inherited methods and populates 'origin' and 'is_inherited' fields.
-    
+
     Returns
     -------
     Dict[str, MethodInfo]
         Dictionary mapping method names to MethodInfo objects.
-    
+
     Examples
     --------
     >>> from epanetparser.rulesets.milp import MILPNode
     >>> methods = discover_methods_in_class(MILPNode, prefix='rule_')
     >>> for name, info in methods.items():
     ...     print(f"{name}: {info.description}")
-    
+
     Note
     ----
     This method excludes static and class methods, returning only instance methods.
-    It uses classes MRO (method resolution order) `__mro__` field to determine 
+    It uses classes MRO (method resolution order) `__mro__` field to determine
     which methods are inherited vs. defined locally. It skips the base `object` class.
     """
     _methods = {}
@@ -305,17 +305,12 @@ def discover_methods_in_class(
     return _methods
 
 
-
-
-
-
-
 def _get_methods_from_object(
-        obj: type | WNTREPANETType,
+        obj: type | "WNTREPANETType",
         prefix: str,
         append_description: bool = False) -> Dict[str, MethodInfo]:
     """Helper method to normalize instance and class validation discovery.
-    
+
     Parameters
     ----------
     obj : type or WNTREPANETType
@@ -324,7 +319,7 @@ def _get_methods_from_object(
         The prefix to filter method names (e.g., 'rule_' or 'warn_').
     append_description : bool, default=False
         If True, appends a 'description' attribute to each discovered method.
-        
+
     Returns
     -------
     Dict[str, MethodInfo]
@@ -332,7 +327,7 @@ def _get_methods_from_object(
     """
     is_cls = inspect.isclass(obj) # true if obj is a class, false if it's not - e.g. it is an instance or a function
     target_cls = obj if is_cls else type(obj)
-    # Extract base method details using deep lookups 
+    # Extract base method details using deep lookups
     # (local_only=False allows ruleset inheritance mapping)
     discovered = discover_methods_in_class(
         target_cls,
@@ -356,7 +351,7 @@ def _get_methods_from_object(
 
 
 def _append_description(func: Callable[P, R]) -> None:
-    """Append a 'description' attribute to a function or method if not 
+    """Append a 'description' attribute to a function or method if not
     already present.
     """
     target = func.__func__ if inspect.ismethod(func) else func
@@ -366,15 +361,15 @@ def _append_description(func: Callable[P, R]) -> None:
 
 
 def get_rule_methods(
-    obj: type | WNTREPANETType,
+    obj: type | "WNTREPANETType",
     append_description: bool = False
     ) -> Dict[str, MethodInfo]:
     """Retrieve validation rule methods from a component class or instance.
-    
+
     Discovers all validation rule methods defined on a component class or instance.
     Rule methods are identified by the 'rule_' prefix in their name. Works with
     both classes (returning unbound functions) and instances (returning bound methods).
-    
+
     Parameters
     ----------
     obj : type or WNTREPANETType
@@ -383,7 +378,7 @@ def get_rule_methods(
         If an instance, returns bound methods in MethodInfo objects.
     append_description : bool, default=False
         If True, appends a 'description' attribute to each discovered method.
-    
+
     Returns
     -------
     Dict[str, MethodInfo]
@@ -395,11 +390,11 @@ def get_rule_methods(
         - signature: str (method signature)
         - origin: Optional[str] (class where method is defined, if inherited)
         - is_inherited: Optional[bool] (True if method is inherited from a parent class)
-    
+
     Examples
     --------
     From instance (bound methods):
-    
+
     >>> from epanetparser.core.epanettypes import WNTREPANETNode
     >>> node = WNTREPANETNode({"name": "J1", "node_type": "Junction"})
     >>> rules = get_rule_methods(node)
@@ -407,15 +402,15 @@ def get_rule_methods(
     ['rule_node_has_name', 'rule_node_has_valid_type', ...]
     >>> rules['rule_node_has_name'].method()  # Execute validation rule
     >>> print(rules['rule_node_has_name'].description)  # Get description
-    
+
     From class (unbound functions):
-    
+
     >>> rules = get_rule_methods(WNTREPANETNode)
     >>> for name, info in rules.items():
     ...     print(f"{name}: {info.description}")
-    
+
     Compare base vs ruleset classes:
-    
+
     >>> from epanetparser.core.epanettypes import WNTREPANETLink
     >>> from epanetparser.rulesets.milp import MILP_Links
     >>> base_rules = set(get_rule_methods(WNTREPANETLink).keys())
@@ -424,12 +419,12 @@ def get_rule_methods(
     >>> for rule_name in extra_rules:
     ...     info = get_rule_methods(MILP_Links)[rule_name]
     ...     print(f"{rule_name}: {info.description}")
-    
+
     See Also
     --------
     get_warning_methods : Retrieve warning check methods (also works on classes and instances)
     MethodInfo : Data class containing method, description, signature, origin, and inheritance info
-    
+
     Notes
     -----
     When passed a class, this function uses `inspect.isfunction` to get unbound functions.
@@ -441,15 +436,15 @@ def get_rule_methods(
 
 
 def get_warning_methods(
-        obj: type | WNTREPANETType,
+        obj: type | "WNTREPANETType",
         append_description: bool = False
     ) -> Dict[str, MethodInfo]:
     """Retrieve warning check methods from a component class or instance.
-    
+
     Discovers all warning check methods defined on a component class or instance.
     Warning methods are identified by the 'warn_' prefix in their name. Works with
     both classes (returning unbound functions) and instances (returning bound methods).
-    
+
     Parameters
     ----------
     obj : type or WNTREPANETType
@@ -458,48 +453,48 @@ def get_warning_methods(
         If an instance, returns bound methods in MethodInfo objects.
     append_description : bool, default=False
         If True, appends a 'description' attribute to each discovered method.
-    
+
     Returns
     -------
     Dict[str, MethodInfo]
         Dictionary mapping warning method names to described methods.
         Keys are method names (e.g., 'warn_unusual_diameter').
         Values are methods containing a description: str (brief description from docstring)
-    
+
     Examples
     --------
     From instance (bound methods):
-    
+
     >>> from epanetparser.core.epanettypes import WNTREPANETLink
     >>> link = WNTREPANETLink({"name": "P1", "link_type": "Pipe"})
     >>> warnings = get_warning_methods(link)
     >>> print(list(warnings.keys()))
     ['warn_roughness_coefficient', ...]
     >>> warnings['warn_roughness_coefficient'].method()  # Execute warning
-    
+
     From class (unbound functions):
-    
+
     >>> warnings = get_warning_methods(WNTREPANETLink)
     >>> for name, info in warnings.items():
     ...     print(f"{name}: {info.description}")
-    
+
     Iterate through all warnings:
-    
+
     >>> for warn_name, info in warnings.items():
     ...     print(f"Checking: {warn_name}")
     ...     try:
     ...         info.method()
     ...     except AssertionError as e:
     ...         print(f"Warning: {e}")
-    
+
     Generate documentation from class:
-    
+
     >>> from epanetparser.rulesets.milp import MILP_Links
     >>> warnings = get_warning_methods(MILP_Links)
     >>> for name, info in sorted(warnings.items()):
     ...     print(f"- {name}")
     ...     print(f"  {info.description}")
-    
+
     See Also
     --------
     get_rule_methods : Retrieve validation rule methods (also works on classes and instances)
@@ -509,7 +504,7 @@ def get_warning_methods(
     Warning methods raise `AssertionError` to signal non-fatal issues.
     Unlike rules, warnings don't prevent component creation but are tracked
     for user notification.
-    
+
     When passed a class, this function uses `inspect.isfunction` to get unbound functions.
     When passed an instance, it uses `inspect.ismethod` to get bound methods.
     Both functions and methods are Callable, so MethodInfo method is always callable.

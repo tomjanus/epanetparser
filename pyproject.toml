@@ -74,9 +74,11 @@ epanetparser = [
 
 [tool.epanetparser]
 # NOTE: this section is not read by the code. Rule set search paths come from
-# `rule_set_discovery.packages` in the configuration file (default_config.yaml),
-# which is the single source of truth. The lists below are kept for reference
-# and are expected to go stale; see docs/TODO_MODEL_LAYER_DUPLICATION.md.
+# `rule_set_discovery` in the configuration file (default_config.yaml), which is
+# the single source of truth. In that file `packages` replaces this list and
+# `extra_packages` appends to it; the built-in packages are always searched
+# first. The lists below are kept for reference and are expected to go stale;
+# see docs/TODO_MODEL_LAYER_DUPLICATION.md.
 rules_dirs = [
     "epanetparser.core_rules",
     "epanetparser.custom_rules"

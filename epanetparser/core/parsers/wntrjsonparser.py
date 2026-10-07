@@ -18,10 +18,6 @@ Duplicate-name detection used to live here. It is now a network rule in
 :mod:`epanetparser.core_rules.epanet_core.network`, because a duplicate name is
 a defect in the model rather than in its encoding.
 
-# TODO: the component inventory below is restated in several other modules, so
-#       adding a component means editing all of them. See
-#       docs/TODO_MODEL_LAYER_DUPLICATION.md, section 1.
-
 Component groups
 ----------------
 ============  ==========================================================

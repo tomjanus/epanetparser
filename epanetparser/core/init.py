@@ -13,9 +13,10 @@ The initialization system is:
 Current Initialization Tasks
 -----------------------------
 1. **User Configuration Setup**
-   - Checks if user config file exists in platform-specific directory
-   - Creates config file from package defaults if missing
-   - Uses ConfigManager for all config operations
+   - Loads configuration with ConfigLoader, merging the packaged defaults with
+     user overrides if the user config file is present in the platform-specific
+     directory
+   - No user config file is created; absent overrides mean defaults are used
 
 2. **Logging Setup**
    - Configures logging from the merged configuration
@@ -44,9 +45,7 @@ The initialize function is called automatically when:
 
 import logging
 import threading
-from pathlib import Path
-from typing import Optional
-from epanetparser.core.config.manager import ConfigManager
+from epanetparser.core.config.manager import ConfigLoader
 from epanetparser.core.logger_setup import LoggingConfig, configure_logging
 
 # Thread-safe initialization state
@@ -56,9 +55,8 @@ _init_lock = threading.Lock()
 
 def initialize(force: bool = False) -> None:
     """Initialize the epanetparser library.
-    
+
     Performs essential setup tasks including:
-    - Creating the user configuration file if it doesn't exist
     - Configuring logging from the merged configuration
 
     Rule sets are deliberately not discovered here: discovery is lazy, in
@@ -96,7 +94,7 @@ def initialize(force: bool = False) -> None:
     
     See Also
     --------
-    epanetparser.core.config.manager.ConfigManager : Configuration management
+    epanetparser.core.config.manager.ConfigLoader : Configuration management
     """
     global _initialized # pylint: disable=global-statement
     if _initialized and not force:
@@ -107,11 +105,10 @@ def initialize(force: bool = False) -> None:
         # while we were waiting for the lock
         if _initialized and not force:
             return
-        manager = ConfigManager()
-        manager.create_user_config()
-        
-        # Setup logging from configuration upon initialization
-        config = ConfigManager().load()
+        # Setup logging from configuration upon initialization. No user
+        # configuration file is created: absent overrides simply mean the
+        # packaged defaults are used verbatim.
+        config = ConfigLoader().load()
         logging_config = LoggingConfig.from_dict(config.get("logging", {}), ignore_unknown=True)
         configure_logging(logging_config)
         

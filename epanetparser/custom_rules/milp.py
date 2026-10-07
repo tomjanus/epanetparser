@@ -44,8 +44,7 @@ __description__ : str
 __is_core__ : bool
     Absent, so this ruleset is classified as custom rather than core.
 """
-from epanetparser.core.decorators import match
-from epanetparser.core.validation import Severity, rule
+from epanetparser.core.validation import match, Severity, rule
 
 #: Schedule horizon of the formulation, in hours.
 TIME_HORIZON = 24
