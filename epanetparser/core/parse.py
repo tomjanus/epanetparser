@@ -112,6 +112,7 @@ from epanetparser.core import __version__, console
 from epanetparser.core.display import results_as_json, write_results
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.lib.converter import WNTRINPJSONConverter
+from epanetparser.core.toon import encode_validation_report
 from epanetparser.core.utils import sha256digest
 from epanetparser.core.download import download_networks
 from epanetparser.core.environment import PackageResolver
@@ -239,10 +240,15 @@ def configure_args(args: List[str]) -> argparse.Namespace:
         default=False,
         help="Display parsing report in JSON format for machine reading"
     )
+    display.add_argument("--toon-output",
+        action="store_true",
+        default=False,
+        help="Display parsing report in TOON format for LLM consumption"
+    )
     display.add_argument("--pretty-output",
         action="store_true",
-        default=True,
-        help="Display parsing report on the console with colour (default)"
+        default=False,
+        help="Display parsing report on the console with colour (default when no other output format specified)"
     )
     display.add_argument("--no-emoji",
         action="store_true",
@@ -356,6 +362,18 @@ def handle_validate(args: argparse.Namespace) -> None:
     if args.no_colour:
         console.no_color = True
 
+    # Determine output format: default to pretty if none explicitly specified
+    explicit_formats = sum([args.json_output, args.toon_output, args.pretty_output])
+    if explicit_formats > 1:
+        rprint(
+            "[red]Error:[/red] Only one of --json-output, --toon-output, --pretty-output may be used",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    use_pretty = args.pretty_output or explicit_formats == 0
+    use_json = args.json_output
+    use_toon = args.toon_output
+
     # Parse the model. Nothing is validated here: a document that cannot be
     # parsed is reported as a structural problem and nothing more.
     network, errors, warnings = WNTREPANETNetwork.from_file(
@@ -367,14 +385,31 @@ def handle_validate(args: argparse.Namespace) -> None:
         # Nothing was validated, so the command must not claim the model is
         # fine. Exiting 1 rather than 2: 2 would mean the model was parsed and
         # found invalid, and this is not that.
-        if not args.json_output:
-            write_results(filename, errors or {}, warnings, use_emoji=useemoji)
-        else:
+        if use_toon:
+            _print_json(encode_validation_report({
+                "is_valid": False,
+                "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
+                "issues": [{
+                    "code": "E_PARSE_FAILED",
+                    "message": str(errors.get("network", ["Unknown parse error"])[0]),
+                    "severity": "ERROR",
+                    "rule_id": "parse",
+                    "ruleset_key": "parser",
+                    "component_type": "network",
+                    "component_name": None,
+                    "attribute": None,
+                    "component_data": {},
+                    "context": {},
+                }]
+            }))
+        elif use_json:
             _print_json(
                 results_as_json(
                     filename, errors, warnings, include_digest=include_digest
                 )
             )
+        else:
+            write_results(filename, errors or {}, warnings, use_emoji=useemoji)
         sys.exit(1)
 
     try:
@@ -388,7 +423,9 @@ def handle_validate(args: argparse.Namespace) -> None:
             [issue for issue in report if not issue.is_warning]
         )
 
-    if args.json_output:
+    if use_toon:
+        _print_json(report.as_toon())
+    elif use_json:
         # Machine-readable output means exactly one JSON document on stdout, so
         # the human-readable component counts are not printed alongside it.
         _print_json(json.dumps(report.as_dict(), indent=2))

@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
+from epanetparser.core.toon import encode_validation_report
+
 
 class Severity(IntEnum):
     """Severity of a :class:`ValidationIssue`.
@@ -423,3 +425,20 @@ class ValidationReport:
             },
             "issues": [issue.as_dict() for issue in self.issues],
         }
+
+    def as_toon(self) -> str:
+        """Return a TOON representation of the validation report.
+
+        Uses tabular form for the issues array for token efficiency.
+
+        Returns
+        -------
+        str
+            TOON-encoded string of the validation report.
+
+        Examples
+        --------
+        >>> ValidationReport().as_toon()
+        'is_valid: true\ncounts: {ERROR: 0, WARNING: 0, INFO: 0}\nissues[0]{}:'
+        """
+        return encode_validation_report(self.as_dict())

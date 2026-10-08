@@ -29,7 +29,10 @@ See Also
 --------
 epanetparser.core.config.config : Config class for accessing configuration values
 """
-from importlib.resources.abc import Traversable
+try:
+    from importlib.resources.abc import Traversable
+except ImportError:
+    from importlib.abc import Traversable
 from typing import Any
 from pathlib import Path
 from importlib.resources import files

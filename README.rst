@@ -343,6 +343,81 @@ A machine-readable report
     }
 
 
+Agentic AI Integration
+----------------------
+
+epanetparser provides native interfaces for agentic AI systems:
+
+### TOON Output (Token-Optimized)
+
+TOON (Token-Oriented Object Notation) is a compact format that reduces token usage by ~40-50% compared to JSON, designed for LLM consumption.
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network.json --toon-output --no-digest
+
+    is_valid: false
+    counts: {ERROR: 2, WARNING: 1, INFO: 0}
+    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context}:
+    E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,,name,{}, {ruleset: epanet_core, component_subtype: network_info}
+    E_CURVE_TYPE_UNSUPPORTED,"Unsupported curve type None",ERROR,rule_curve_type_supported,epanet_core,WNTREPANETCurve,C1,type,{}, {ruleset: epanet_core}
+    W_UNKNOWN_PATTERN_REFERENCE,"Pattern 'P3' referenced but not defined",WARNING,rule_pattern_refs_exist,epanet_core,network,,pattern,, {ruleset: epanet_core}
+
+The ``--toon-output`` flag is mutually exclusive with ``--json-output`` and ``--pretty-output``.
+
+### Python API
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from epanetparser.core.validation import validate, ValidationContext
+
+    network, _, _ = WNTREPANETNetwork.from_file("network.json")
+    report = validate(network, ValidationContext(custom=["milp"]))
+
+    # TOON output for LLM consumption
+    toon_str = report.as_toon()
+
+    # JSON dict for programmatic processing
+    json_dict = report.as_dict()
+
+### MCP Server (Model Context Protocol)
+
+Install with agentic extras:
+
+.. code-block:: console
+
+    ❯ pip install epanetparser[agentic]
+
+Start the MCP server:
+
+.. code-block:: console
+
+    ❯ epanetparser-mcp
+
+The server exposes these tools via stdio transport:
+
+- ``validate_network(file_path, json_content, rulesets, output_format)``
+- ``parse_network(file_path, json_content)``
+- ``convert_format(input_path, output_path, epanet_version)``
+- ``list_rulesets()``
+- ``get_ruleset_details(ruleset_key, component_type)``
+
+Configure in your MCP client (Claude Desktop, Cursor, etc.):
+
+.. code-block:: json
+
+    {
+      "mcpServers": {
+        "epanetparser": {
+          "command": "epanetparser-mcp"
+        }
+      }
+    }
+
+See ``docs/source/agentic.md`` for detailed documentation and integration patterns.
+
+
 EPANETParser structure
 ----------------------
 
