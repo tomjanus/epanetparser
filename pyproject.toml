@@ -31,10 +31,16 @@ platformdirs = "^4.9.2"
 pyyaml = "^6.0"
 # Imported directly by epanetparser.core.download.
 requests = "^2.32"
+# Optional: MCP server for agentic AI integration
+mcp = {version = "^1.0", optional = true}
+
+[tool.poetry.extras]
+agentic = ["mcp"]
 
 [tool.poetry.scripts]
 epanetparser = "epanetparser.core.parse:run"
 epanetparser-plugins = "epanetparser.core.plugins_cli:main"
+epanetparser-mcp = "epanetparser.core.mcp_server:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4"
@@ -47,6 +53,8 @@ pytest-cov = "^5.0"
 nox = "^2024.4.22"
 sphinx = "^8.1"
 sphinx-rtd-theme = "^3.1"
+responses = "^0.25"
+pytest-mock = "^3.14"
 
 [tool.poetry.group.examples.dependencies]
 nbformat = "^5.9"
@@ -64,6 +72,9 @@ addopts = [
 ]
 xfail_strict = true
 testpaths = ["tests"]
+markers = [
+    "asyncio: mark test as async",
+]
 
 
 [mypy]

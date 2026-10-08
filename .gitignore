@@ -226,6 +226,7 @@ epanetparser/networks/extra
 .opencode
 .claude
 AGENT.md
+AGENTS.md
 PROMPT.md
 CONTEXT.md
 opencode.json

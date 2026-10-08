@@ -491,3 +491,228 @@ class TestConvert:
         result = convert(str(tmp_path / "absent.json"))
         assert result.returncode == 1
         assert "not found" in (result.stderr + result.stdout).lower()
+
+
+class TestVersionFlag:
+    """Tests for --version flag."""
+
+    def test_version_flag_prints_version_and_exits_zero(self):
+        """--version prints version and exits with code 0."""
+        result = subprocess.run(
+            [sys.executable, "-m", "epanetparser.core.parse", "--version"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip()
+        # Version should be a valid version string
+        assert "." in result.stdout.strip()
+
+    def test_version_flag_with_subcommand_exits_zero(self):
+        """--version before subcommand still prints version."""
+        result = subprocess.run(
+            [sys.executable, "-m", "epanetparser.core.parse", "--version", "validate", "-f", VALID],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip()
+
+
+class TestToonOutput:
+    """Tests for --toon-output flag."""
+
+    def test_toon_output_valid_model(self):
+        """TOON output for valid model shows is_valid: true and empty issues."""
+        result = run("-f", VALID, "--toon-output", "--no-digest")
+        assert result.returncode == 0
+        assert "is_valid: true" in result.stdout
+        assert "issues[0]" in result.stdout
+        assert "ERROR: 0" in result.stdout
+        assert "WARNING: 0" in result.stdout
+
+    def test_toon_output_invalid_model(self):
+        """TOON output for invalid model shows issues in tabular form."""
+        result = run("-f", INVALID, "--toon-output", "--no-digest")
+        assert result.returncode == 2
+        assert "is_valid: false" in result.stdout
+        assert "ERROR:" in result.stdout
+        assert "issues[" in result.stdout
+
+    def test_toon_output_with_ruleset(self):
+        """TOON output works with custom rulesets."""
+        result = run("-f", INVALID, "--toon-output", "--ruleset", "milp", "--no-digest")
+        assert result.returncode == 2
+        assert "E_MILP" in result.stdout
+
+    def test_toon_output_mutually_exclusive_with_json(self):
+        """--toon-output and --json-output are mutually exclusive."""
+        result = run("-f", INVALID, "--toon-output", "--json-output", "--no-digest")
+        assert result.returncode == 1
+        assert "Only one of --json-output, --toon-output, --pretty-output" in result.stderr
+
+    def test_toon_output_mutually_exclusive_with_pretty(self):
+        """--toon-output and --pretty-output are mutually exclusive."""
+        result = run("-f", INVALID, "--toon-output", "--pretty-output", "--no-digest")
+        assert result.returncode == 1
+        assert "Only one of --json-output, --toon-output, --pretty-output" in result.stderr
+
+
+class TestParseFailureOutput:
+    """Tests for parse failure output in different formats."""
+
+    def test_parse_failure_json_output(self, tmp_path):
+        """Parse failure with --json-output returns JSON error report."""
+        path = tmp_path / "broken.json"
+        path.write_text("{not json", encoding="utf-8")
+        result = run("-f", str(path), "--json-output", "--no-digest")
+        assert result.returncode == 1
+        payload = json.loads(result.stdout)
+        assert payload["results"]["errors"] == 1
+        assert "errors" in payload
+        assert "network" in payload["errors"]
+
+    def test_parse_failure_toon_output(self, tmp_path):
+        """Parse failure with --toon-output returns TOON error report."""
+        path = tmp_path / "broken.json"
+        path.write_text("{not json", encoding="utf-8")
+        result = run("-f", str(path), "--toon-output", "--no-digest")
+        assert result.returncode == 1
+        assert "is_valid: false" in result.stdout
+        assert "E_PARSE_FAILED" in result.stdout
+
+    def test_parse_failure_default_output(self, tmp_path):
+        """Parse failure with default output shows error."""
+        path = tmp_path / "broken.json"
+        path.write_text("{not json", encoding="utf-8")
+        result = run("-f", str(path), "--no-digest")
+        assert result.returncode == 1
+        assert "Unable to read input file" in result.stdout or "Invalid JSON" in result.stdout
+
+
+class TestRuleSetSelectionError:
+    """Tests for RuleSetSelectionError handling."""
+
+    def test_invalid_ruleset_key_exits_one(self):
+        """Unknown ruleset key exits with code 1."""
+        result = run("-f", VALID, "--ruleset", "nonexistent_ruleset", "--no-digest")
+        assert result.returncode == 1
+        assert "nonexistent_ruleset" in result.stderr
+        assert "Available:" in result.stderr
+
+
+class TestIgnoreWarnings:
+    """Tests for --ignore-warnings flag."""
+
+    def test_ignore_warnings_removes_warnings_from_report(self):
+        """Warnings are filtered out when --ignore-warnings is used."""
+        result = run("-f", INVALID_MILP, "--ruleset", "milp", "--ignore-warnings", "--json-output", "--no-digest")
+        assert result.returncode in (0, 2)
+        payload = json.loads(result.stdout)
+        assert payload["counts"]["WARNING"] == 0
+
+    def test_ignore_warnings_with_pretty_output(self):
+        """Warnings are filtered from pretty output too."""
+        result = run("-f", INVALID_MILP, "--ruleset", "milp", "--ignore-warnings", "--no-digest")
+        assert result.returncode in (0, 2)
+        # Should not contain warning indicators
+        assert "W_MILP" not in result.stdout
+
+
+class TestTerseReport:
+    """Tests for --terse-report flag."""
+
+    def test_terse_report_valid_model(self):
+        """Terse report for valid model shows only counts."""
+        result = run("-f", VALID, "--terse-report", "--no-digest")
+        assert result.returncode == 0
+        stdout = result.stdout.strip()
+        assert stdout.startswith("{'nodes':")
+        assert "ERROR" not in stdout
+
+    def test_terse_report_invalid_model_shows_full_report(self):
+        """Terse report for invalid model still shows full report (terse only applies to valid)."""
+        result = run("-f", INVALID, "--terse-report", "--no-digest")
+        assert result.returncode == 2
+        stdout = result.stdout.strip()
+        # For invalid models, terse report still shows the full report with errors
+        # Uses 🔴 emoji for errors and E_ error codes
+        assert "🔴" in stdout or "E_NETWORK_NAME_MISSING" in stdout
+        # But it ends with the component counts
+        assert "nodes" in stdout and "links" in stdout
+
+
+class TestConvertErrors:
+    """Tests for convert subcommand error cases."""
+
+    def test_convert_missing_input_exits_one(self, tmp_path):
+        """Missing input file exits with code 1."""
+        result = convert(str(tmp_path / "absent.json"))
+        assert result.returncode == 1
+        assert "not found" in (result.stderr + result.stdout).lower()
+
+    def test_convert_invalid_extension_exits_one(self, tmp_path):
+        """Unsupported file extension exits with code 1."""
+        path = tmp_path / "model.txt"
+        path.write_text("{}", encoding="utf-8")
+        result = convert(str(path))
+        assert result.returncode == 1
+        assert "Unsupported file extension" in result.stderr + result.stdout
+
+    def test_convert_missing_input_file_stderr(self, tmp_path):
+        """Missing input file error goes to stderr."""
+        result = convert(str(tmp_path / "absent.json"))
+        assert result.returncode == 1
+        assert "not found" in result.stderr.lower()
+
+
+class TestUnknownCommand:
+    """Tests for unknown command handling."""
+
+    def test_unknown_command_exits_two(self):
+        """Unknown subcommand exits with code 2 (argparse error)."""
+        result = subprocess.run(
+            [sys.executable, "-m", "epanetparser.core.parse", "unknowncmd"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        assert result.returncode == 2
+        assert "invalid choice" in result.stderr.lower()
+
+    def test_no_command_exits_zero_shows_help(self):
+        """No subcommand exits with code 0 and shows help."""
+        result = subprocess.run(
+            [sys.executable, "-m", "epanetparser.core.parse"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "usage" in result.stdout.lower()
+        assert "validate" in result.stdout
+        assert "convert" in result.stdout
+        assert "info" in result.stdout
+
+
+class TestRaiseOnError:
+    """Tests for --raise-on-error flag."""
+
+    def test_raise_on_error_with_structural_error(self, tmp_path):
+        """--raise-on-error raises exception for structural parse error."""
+        path = tmp_path / "broken.json"
+        path.write_text("{not json", encoding="utf-8")
+        result = run("-f", str(path), "--raise-on-error", "--no-digest")
+        # The flag should cause the error to be raised rather than reported
+        # Since we run in subprocess, we check the exit code
+        assert result.returncode == 1
