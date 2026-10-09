@@ -21,6 +21,19 @@ Rule set
     a group. Custom rule sets let different collections of rules be applied to
     the same model depending on the context the caller operates in.
 
+Rule Metadata
+    Each rule carries structured metadata for categorization and AI-assisted
+    remediation, extracted from the function's docstring:
+
+    - **classification**: The validation category (see :doc:`validation_categories`).
+      One of: ``Topology``, ``Parameter``, ``Curve``, ``Control``, ``Network``,
+      ``Option``, ``Energy``, ``Engineering``.
+    - **fix**: An imperative fix suggestion for AI agents (e.g., "Add the missing
+      elevation value" rather than "The elevation is missing").
+
+    These fields appear in JSON/TOON output, console reports (with ``--verbose``),
+    and the ``epanetparser-plugins show`` command.
+
 Rules are plain functions. They are not methods on the component classes, and
 nothing subclasses them. Adding validation never requires modifying a model
 class, which is what makes it possible to impose an application's constraints on
@@ -38,7 +51,11 @@ import elsewhere, no base class to subclass.
 
     @rule("WNTREPANETLink", code="E_NO_CHECK_VALVES", attribute="check_valve")
     def rule_no_check_valves(link) -> None:
-        """A check valve is not supported by our solver."""
+        """A check valve is not supported by our solver.
+
+        classification : Control
+        fix : Remove the check valve or replace with a supported valve type.
+        """
         assert link.data.get("check_valve") in (False, None), "Check valves not supported"
 
 The arguments to :func:`rule` are the rule's metadata:
@@ -67,7 +84,11 @@ Only :attr:`Severity.ERROR` makes a report invalid.
 
     @rule("WNTREPANETNetworkInfo", code="W_NETWORK_VERSION_MISSING", attribute="version")
     def warn_network_has_version(network_info) -> None:
-        """A network should declare the EPANET version it was written for."""
+        """A network should declare the EPANET version it was written for.
+
+        classification : Parameter
+        fix : Add the version field to the network metadata.
+        """
         assert network_info.data.get("version"), "Network missing a version"
 
 Use ``defined()`` to require a field to carry a value, rather than merely to be
@@ -81,7 +102,11 @@ a null elevation is no more simulable than one whose elevation is absent.
 
     @rule("WNTREPANETNode", code="E_NODE_ELEVATION_MISSING", attribute="elevation")
     def rule_junction_has_elevation(node) -> None:
-        """A junction must have an elevation."""
+        """A junction must have an elevation.
+
+        classification : Parameter
+        fix : Provide the junction elevation in meters.
+        """
         assert defined(node, "elevation"), "Junction does not define elevation"
 
 Restricting a rule with ``match``
@@ -99,7 +124,11 @@ is imported from :mod:`epanetparser.core.validation`, and applied *below*
     @rule("WNTREPANETNode", code="E_NODE_ELEVATION_MISSING", attribute="elevation")
     @match("Junction")
     def rule_junction_has_elevation(node) -> None:
-        """A junction must have an elevation."""
+        """A junction must have an elevation.
+
+        classification : Parameter
+        fix : Provide the junction elevation in meters.
+        """
         assert defined(node, "elevation"), "Junction does not define elevation"
 
 Without a :func:`match` decorator, a rule applies to *every* instance of its
@@ -122,7 +151,11 @@ receives the model as a whole.
 
     @network_rule(code="E_DUPLICATE_COMPONENT_NAME", attribute="name")
     def rule_component_names_unique(network) -> None:
-        """Component names must be unique within their collection."""
+        """Component names must be unique within their collection.
+
+        classification : Network
+        fix : Rename duplicate components so each has a unique name within its collection.
+        """
         duplicates = []
         for collection in ("nodes", "links", "curves"):
             duplicates.extend(f"{collection} <{name}>" for name in network.index.duplicates(collection))
@@ -130,7 +163,11 @@ receives the model as a whole.
 
     @network_rule(code="E_NETWORK_HAS_NODES", attribute="nodes")
     def rule_network_has_nodes(network) -> None:
-        """A network must contain at least one named node."""
+        """A network must contain at least one named node.
+
+        classification : Topology
+        fix : Add at least one junction, reservoir, or tank to the network.
+        """
         assert len(network.index.nodes) > 0, "Network defines no named nodes"
 
 A network rule resolves names through the model's ``index``, which the engine
@@ -141,7 +178,11 @@ whether ``pump_curve_name`` names a curve that exists:
 
     @network_rule(code="E_UNKNOWN_CURVE", attribute="pump_curve_name")
     def rule_pump_curves_exist(network) -> None:
-        """Every pump must reference a curve that exists."""
+        """Every pump must reference a curve that exists.
+
+        classification : Network
+        fix : Define the referenced pump curve in the [CURVES] section.
+        """
         for pump in network.links:
             curve = pump.data.get("pump_curve_name")
             assert not curve or curve in network.index.curves, "Unknown pump curve"
@@ -153,10 +194,36 @@ A rule signals failure by raising, conventionally with ``assert``. Any exception
 a rule raises is recorded as an issue against the model; that is the whole
 contract.
 
-An exception that is *not* :exc:`AssertionError` indicates a defect in the rule
-rather than a finding about the model. Those raise :exc:`RuleExecutionError`
-instead of being reported, because a broken rule silently reporting nothing
-would let an invalid model pass.
+For richer context, raise :class:`~epanetparser.core.validation.rules.RuleViolation`
+instead of a bare ``assert``. It carries structured metadata that appears in the
+issue's ``context``, ``failing_fields``, and ``component_data``:
+
+.. code-block:: python
+
+    from epanetparser.core.validation import network_rule, RuleViolation
+
+    @network_rule(code="E_UNKNOWN_CURVE", attribute="pump_curve_name")
+    def rule_pump_curve_exists(network) -> None:
+        """A pump must reference an existing curve.
+
+        classification : Network
+        fix : Define the referenced pump curve in the [CURVES] section.
+        """
+        for pump in network.links:
+            curve = pump.data.get("pump_curve_name")
+            if curve and curve not in network.index.curves:
+                raise RuleViolation(
+                    "Unknown pump curve",
+                    failing_fields=["pump_curve_name"],
+                    component_data=pump.data,
+                    curve=curve,
+                    pump=pump.name
+                )
+
+An exception that is *not* :exc:`AssertionError` or :exc:`RuleViolation`
+indicates a defect in the rule rather than a finding about the model. Those
+raise :exc:`RuleExecutionError` instead of being reported, because a broken
+rule silently reporting nothing would let an invalid model pass.
 
 Defining a rule set
 -------------------
@@ -175,7 +242,11 @@ A rule set is a module declaring its identity, containing rule functions:
 
     @rule("WNTREPANETLink", code="E_NO_CHECK_VALVES", attribute="check_valve")
     def rule_no_check_valves(link) -> None:
-        """A check valve is not supported by our solver."""
+        """A check valve is not supported by our solver.
+
+        classification : Control
+        fix : Remove the check valve or replace with a supported valve type.
+        """
         assert link.data.get("check_valve") in (False, None), "Check valves not supported"
 
 __key__
@@ -195,6 +266,16 @@ __is_core__
     ``True`` for a core rule set, ``False`` or absent for a custom one. Exactly
     one core rule set may be selected per validation run; any number of custom
     ones may be added alongside it.
+
+Rules can be declared in two ways:
+
+1. **Explicit** (shown above): using ``@rule`` or ``@network_rule`` decorators.
+2. **Implicit**: functions named ``rule_*`` (error) or ``warn_*`` (warning) are
+   auto-discovered. The component type is inferred from the first parameter's
+   type annotation (e.g., ``def rule_x(node: WNTREPANETNode)``). Network rules
+   must use ``@network_rule`` explicitly.
+
+Both styles coexist; ``collect_rules()`` finds all rules in a module.
 
 Discovery
 ---------
@@ -243,6 +324,14 @@ configured packages:
 Nothing needs to be imported or listed by hand either way. If two rule sets
 claim the same key, the configured packages win.
 
+When a rule set module is scanned, ``collect_rules()`` collects:
+
+- Explicit rules: functions with ``@rule`` or ``@network_rule`` decorators
+- Implicit rules: functions named ``rule_*`` (ERROR) or ``warn_*`` (WARNING)
+
+Only functions defined *in* the module are collected (checked via
+``__module__``), so re-exported rules are not duplicated.
+
 The rule set will then appear in the output of ``epanetparser info
 --list-rulesets``:
 
@@ -252,7 +341,7 @@ The rule set will then appear in the output of ``epanetparser info
     Available rule sets:
       epanet_core (core) - EPANET core rules v1.0.0
           module: epanetparser.core_rules.epanet_core
-          rules: 35 component, 9 network
+          rules: 44 component, 12 network
           Simulator-agnostic checks that a model is a well-formed EPANET model.
       milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
           module: epanetparser.custom_rules.milp
@@ -279,4 +368,9 @@ an MILP pump scheduling formulation, belong in a custom rule set. That
 distinction is what the architecture exists to express: a model can be a valid
 EPANET model and still be unusable by a particular tool, and both statements can
 be true of the same object at the same time.
+
+The core rule set currently provides **44 component rules** and **12 network
+rules** covering all statically-checkable EPANET error codes (200-263) plus
+engineering judgment warnings. See :doc:`validation_categories` for a breakdown
+by category.
 

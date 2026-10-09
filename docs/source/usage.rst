@@ -72,8 +72,9 @@ model and returns either:
     Usage: epanetparser validate [-h] -f <filename> [--ruleset <ruleset>]
                                  [--list-rulesets] [--raise-on-warning]
                                  [--ignore-warnings] [--raise-on-error]
-                                 [--json-output] [--pretty-output] [--no-emoji]
-                                 [--no-colour] [--terse-report] [--no-digest]
+                                 [--json-output] [--toon-output] [--pretty-output]
+                                 [--no-emoji] [--no-colour] [--terse-report] [--no-digest]
+                                 [--verbose]
 
     Options:
       -h, --help            show this help message and exit
@@ -95,13 +96,17 @@ model and returns either:
     Display Options:
       --json-output         Display parsing report in JSON format for machine
                             reading
+      --toon-output         Display parsing report in TOON format for LLM
+                            consumption
       --pretty-output       Display parsing report on the console with colour
-                            (default)
+                            (default when no other output format specified)
       --no-emoji            Omit emoji in console parsing reports
       --no-colour           Omit colour output in console parsing reports. Implies
                             --no-emoji
       --terse-report        Display only a terse report for valid networks
       --no-digest           Omit sha256 digest in JSON and dict parsing reports
+      --verbose             Show full fix suggestions in console output (default:
+                            truncated to 80 chars)
 
 Both INP and WNTR JSON files are accepted. An ``.inp`` file is converted to
 WNTR's JSON representation with WNTR before being parsed.
@@ -183,14 +188,37 @@ themselves:
           "component_type": "WNTREPANETNetworkInfo",
           "component_name": null,
           "attribute": "name",
+          "component_data": {},
           "context": {
             "ruleset": "epanet_core",
             "component_subtype": "network_info"
-          }
+          },
+          "category": "Network",
+          "fix_suggestion": "Provide a name for the network in the [TITLE] section."
         },
         ...
       ]
     }
+
+TOON Output
+^^^^^^^^^^^
+
+The ``--toon-output`` option provides the report in TOON (Token-Oriented Object
+Notation) format, a compact encoding designed for LLM consumption that reduces
+token usage by approximately 66% compared to JSON:
+
+.. code-block:: console
+
+    $ epanetparser validate -f invalid_network.json --toon-output --no-digest
+    is_valid: false
+    counts: {ERROR: 2, WARNING: 1, INFO: 0}
+    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion}:
+    E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,,name,{}, {ruleset: epanet_core, component_subtype: network_info},Network,Provide a name for the network in the [TITLE] section.
+    E_CURVE_TYPE_UNSUPPORTED,"Unsupported curve type None",ERROR,rule_curve_type_supported,epanet_core,WNTREPANETCurve,C1,type,{}, {ruleset: epanet_core},Curve,Change the curve type to one of the supported types: HEAD, PUMP, EFFICIENCY, VOLUME.
+    W_UNKNOWN_PATTERN_REFERENCE,"Pattern 'P3' referenced but not defined",WARNING,rule_pattern_refs_exist,epanet_core,network,,pattern,, {ruleset: epanet_core},Network,Define the referenced pattern in the [PATTERNS] section.
+
+The ``--toon-output`` flag is mutually exclusive with ``--json-output`` and
+``--pretty-output``. Only one output format may be specified at a time.
 
 Exit status
 -----------
@@ -228,7 +256,7 @@ To see what is available:
     Available rule sets:
       epanet_core (core) - EPANET core rules v1.0.0
           module: epanetparser.core_rules.epanet_core
-          rules: 35 component, 9 network
+          rules: 44 component, 12 network
           Simulator-agnostic checks that a model is a well-formed EPANET model:
           required component fields, valid component types, well-formed curves,
           unique component names, and resolvable references between components.
@@ -299,6 +327,32 @@ so it is rescanned:
 .. code-block:: console
 
     $ epanetparser-plugins refresh
+
+The ``show`` subcommand now displays each rule's category and fix suggestion:
+
+.. code-block:: console
+
+    $ epanetparser-plugins show --ruleset epanet_core --component WNTREPANETNode
+    ╭────────────────────────────────────────────────────────────────────────╮
+    │                  core rule set: epanet_core                            │
+    │  EPANET core rules v1.0.0                                              │
+    │  module: epanetparser.core_rules.epanet_core.nodes                     │
+    │                                                                        │
+    │  Simulator-agnostic checks that a model is a well-formed EPANET model. │
+    ╰────────────────────────────────────────────────────────────────────────╯
+    
+    Component rules (28)
+      E_NODE_NAME_MISSING  rule_node_has_name  (WNTREPANETNode, ERROR)
+          attribute name
+          category Parameter
+          fix Assign a unique identifier to the node.
+          A node must have a name.
+      W_NODE_TYPE_MISSING  warn_node_has_type  (WNTREPANETNode, WARNING)
+          attribute node_type
+          category Parameter
+          fix Specify the node type as Junction, Reservoir, or Tank.
+          A node should declare which kind of node it is.
+      ...
 
 Configuration
 -------------

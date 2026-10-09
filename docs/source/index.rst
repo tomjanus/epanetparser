@@ -31,12 +31,21 @@ The `epanetparser` source code is hosted
    :caption: Rules and Rulesets
 
    rules
+   validation_categories
 
 .. toctree::
    :maxdepth: 2
    :caption: The epanetparser library
 
    library
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Agentic AI Integration
+
+   agentic
+   toon_format
+   mcp_server
 
 Indices and tables
 ==================

@@ -34,7 +34,6 @@ real member count; both are expanded in the later diagrams.
    :alt: Overview of the epanetparser classes: the parser, the model, the validation engine and the rule sets
    :align: center
    :width: 100%
-   :target: _images/epanetparser_class_hierarchy.svg
 
 The data flow is the part worth reading. The parser builds components and
 stops. ``component.validate()`` delegates to the engine, holding no rule
@@ -59,7 +58,7 @@ six list-backed collections (``curves``, ``patterns``, ``nodes``,
    :alt: The model layer: the abstract WNTREPANETType base, its eight subclasses, and the network that owns them
    :align: center
    :width: 100%
-   :target: _images/epanetparser_model_layer.svg
+   
 
 ``WNTREPANETType`` has exactly one abstract member, ``type``. The
 ``validate()`` method on it is a delegation point, not an implementation.
@@ -77,7 +76,7 @@ would let an invalid model pass.
    :alt: The validation engine: rule set registry, rule sets, rule specs, the validator and the report
    :align: center
    :width: 100%
-   :target: _images/epanetparser_validation_engine.svg
+   
 
 Validation runs in three stages, and the order is what makes a report
 readable:
@@ -86,6 +85,14 @@ readable:
 2. network-level rules, with the name index available for resolving
    references;
 3. each ``AssertionError`` becomes a ``ValidationIssue``.
+
+Each ``ValidationIssue`` now carries structured metadata including:
+
+- ``category``: The validation category (Topology, Parameter, Curve, Control,
+  Network, Option, Energy, Engineering)
+- ``fix_suggestion``: An imperative remediation hint for AI agents
+- ``component_data``: Full data dictionary of the validated component
+- ``context``: Additional metadata (ruleset, component subtype, failing fields)
 
 Only ``Severity.ERROR`` makes a report invalid.
 
@@ -99,7 +106,7 @@ exception taxonomy.
    :alt: Rule set modules, the authoring decorators, and the exception hierarchy
    :align: center
    :width: 100%
-   :target: _images/epanetparser_rule_sets.svg
+   
 
 The core/custom split is the distinction the architecture exists to
 express. ``epanet_core`` states what EPANET itself requires, like a
@@ -118,6 +125,14 @@ under ``rule_set_discovery`` and it is discovered. Severity follows the
 function name: ``rule_*`` reports ``ERROR``, ``warn_*`` reports
 ``WARNING``. Decorator order is ``@rule`` outermost with ``@match`` below
 it.
+
+Rules can be declared explicitly with ``@rule``/``@network_rule`` decorators,
+or implicitly via naming convention: functions named ``rule_*`` (ERROR) or
+``warn_*`` (WARNING) are auto-discovered. The component type is inferred
+from the first parameter's type annotation. Network rules must use
+``@network_rule`` explicitly. ``collect_rules()`` scans a module for both
+styles, using ``__module__`` to avoid duplicate collection of re-exported
+functions.
 
 .. note::
 

@@ -100,6 +100,34 @@ report of findings and exit status 2:
 Every finding carries a stable code, such as ``E_CURVE_TYPE_UNSUPPORTED``, so downstream
 tooling can match on it without depending on message text.
 
+Verbose output with fix suggestions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``--verbose`` to show full fix suggestions for each finding:
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network.json --verbose --no-digest
+
+    ─────────────────────────────────────── 1 ───────────────────────────────────────
+
+      🔴  1 'E_CURVE_TYPE_UNSUPPORTED' -> Unsupported curve type None
+          Rule: rule_curve_type_supported
+          Ruleset: epanet_core
+          Attribute: type
+          Category: Curve
+          Fix: Change the curve type to one of the supported types: HEAD, PUMP, EFFICIENCY, VOLUME.
+
+    ─────────────────────────────────────────────────────────────────────────────────
+    File: invalid_network.json
+    Nodes: 785
+    Links: 909
+    Curves: 1
+    Patterns: 3
+    Controls: 2
+
+Without ``--verbose``, fix suggestions are truncated to 80 characters.
+
 Or from Python, where parsing and validation are separate steps:
 
 .. code-block:: python
@@ -138,7 +166,7 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
 
     available commands:
       download-extra       Download additional networks from GitHub release for
-                          testing and benchmarking
+                           testing and benchmarking
       validate             Validate an EPANET model and display results
       convert              Convert between INP and JSON formats
       info                 Display information about the EPANET parser
@@ -147,8 +175,9 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
     usage: epanetparser validate [-h] -f <filename> [--ruleset <ruleset>]
                                  [--list-rulesets] [--raise-on-warning]
                                  [--ignore-warnings] [--raise-on-error]
-                                 [--json-output] [--pretty-output] [--no-emoji]
-                                 [--no-colour] [--terse-report] [--no-digest]
+                                 [--json-output] [--toon-output] [--pretty-output]
+                                 [--no-emoji] [--no-colour] [--terse-report]
+                                 [--no-digest] [--verbose]
 
     Validation Options:
       --ruleset <ruleset>   Add a custom ruleset to the core ruleset. May be given
@@ -164,13 +193,16 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
     Display Options:
       --json-output         Display parsing report in JSON format for machine
                             reading
+      --toon-output         Display parsing report in TOON format for LLM
+                            consumption
       --pretty-output       Display parsing report on the console with colour
-                            (default)
       --no-emoji            Omit emoji in console parsing reports
       --no-colour           Omit colour output in console parsing reports.
                             Implies --no-emoji
       --terse-report        Display only a terse report for valid networks
       --no-digest           Omit sha256 digest in JSON and dict parsing reports
+      --verbose             Show full fix suggestions in console output (default:
+                            truncated to 80 chars)
 
 The exit status says whether the model is usable, so the command composes with a
 build:
@@ -333,10 +365,13 @@ A machine-readable report
           "component_type": "WNTREPANETNetworkInfo",
           "component_name": null,
           "attribute": "name",
+          "component_data": {},
           "context": {
             "ruleset": "epanet_core",
             "component_subtype": "network_info"
-          }
+          },
+          "category": "Network",
+          "fix_suggestion": "Provide a name for the network in the [TITLE] section."
         },
         ...
       ]
@@ -350,7 +385,7 @@ epanetparser provides native interfaces for agentic AI systems:
 
 ### TOON Output (Token-Optimized)
 
-TOON (Token-Oriented Object Notation) is a compact format that reduces token usage by ~40-50% compared to JSON, designed for LLM consumption.
+TOON (Token-Oriented Object Notation) is a compact format that reduces token usage by ~66% compared to JSON, designed for LLM consumption.
 
 .. code-block:: console
 
@@ -358,10 +393,10 @@ TOON (Token-Oriented Object Notation) is a compact format that reduces token usa
 
     is_valid: false
     counts: {ERROR: 2, WARNING: 1, INFO: 0}
-    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context}:
-    E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,,name,{}, {ruleset: epanet_core, component_subtype: network_info}
-    E_CURVE_TYPE_UNSUPPORTED,"Unsupported curve type None",ERROR,rule_curve_type_supported,epanet_core,WNTREPANETCurve,C1,type,{}, {ruleset: epanet_core}
-    W_UNKNOWN_PATTERN_REFERENCE,"Pattern 'P3' referenced but not defined",WARNING,rule_pattern_refs_exist,epanet_core,network,,pattern,, {ruleset: epanet_core}
+    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion}:
+    E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,,name,{}, {ruleset: epanet_core, component_subtype: network_info},Network,Provide a name for the network in the [TITLE] section.
+    E_CURVE_TYPE_UNSUPPORTED,"Unsupported curve type None",ERROR,rule_curve_type_supported,epanet_core,WNTREPANETCurve,C1,type,{}, {ruleset: epanet_core},Curve,Change the curve type to one of the supported types: HEAD, PUMP, EFFICIENCY, VOLUME.
+    W_UNKNOWN_PATTERN_REFERENCE,"Pattern 'P3' referenced but not defined",WARNING,rule_pattern_refs_exist,epanet_core,network,,pattern,, {ruleset: epanet_core},Network,Define the referenced pattern in the [PATTERNS] section.
 
 The ``--toon-output`` flag is mutually exclusive with ``--json-output`` and ``--pretty-output``.
 
@@ -463,10 +498,11 @@ UML diagrams describing the core classes and their relationships are in
 `class hierarchy page <https://tomjanus.github.io/epanetparser/hierarchy.html>`_.
 
 Validation architecture
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 A **rule set** is a module declaring ``__key__``, ``__ruleset_name__`` and
-``__version__``, containing plain functions that ``assert``:
+``__version__``, containing plain functions that ``assert``. Rules include
+metadata for categorization and AI-assisted remediation via docstring fields:
 
 .. code-block:: python
 
@@ -478,18 +514,30 @@ A **rule set** is a module declaring ``__key__``, ``__ruleset_name__`` and
 
     @rule("WNTREPANETLink", code="E_NO_CHECK_VALVES", attribute="check_valve")
     def rule_no_check_valves(link) -> None:
-        """A check valve is not supported by our solver."""
+        """A check valve is not supported by our solver.
+
+        classification : Control
+        fix : Remove the check valve or replace with a supported valve type.
+        """
         assert link.data.get("check_valve") in (False, None), "Check valves not supported"
 
     @rule("WNTREPANETNode", code="E_TANK_OVERFLOW", attribute="overflow")
     @match("Tank")
     def rule_no_tank_overflow(node) -> None:
-        """Our solver models tanks as closed cylinders."""
+        """Our solver models tanks as closed cylinders.
+
+        classification : Topology
+        fix : Set overflow to False or remove the overflow configuration.
+        """
         assert node.data.get("overflow") in (None, False), "Tank overflow not supported"
 
     @network_rule(code="E_UNKNOWN_CURVE", attribute="pump_curve_name")
     def rule_pump_curves_exist(network) -> None:
-        """Every pump must reference a curve that exists."""
+        """Every pump must reference a curve that exists.
+
+        classification : Network
+        fix : Define the referenced pump curve in the [CURVES] section.
+        """
         for pump in network.links:
             curve = pump.data.get("pump_curve_name")
             assert not curve or curve in network.index.curves, "Unknown pump curve"
@@ -499,6 +547,11 @@ automatically. Nothing else needs to change: no component class is imported, no
 registry entry is written, and no base class is subclassed. A rule set
 published as its own distribution can instead register through the
 ``epanetparser.rulesets`` entry point group.
+
+Rules whose names begin with ``warn_`` report at ``Severity.WARNING``; all
+others report at ``Severity.ERROR``. Only ``ERROR`` findings make a report
+invalid. Use ``@match("Type")`` to restrict a rule to a concrete component
+type (e.g., ``"Tank"``, ``"Pipe"``, ``"PRV"``).
 
 **Exactly one** core rule set is selected per run; **any number** of custom rule
 sets may be selected alongside it. The core rule set, ``epanet_core``, checks
@@ -576,7 +629,7 @@ typo in a rule set name fails loudly instead of silently validating less than
 you asked for.
 
 Results
-~~~~~~~
+~~~~~~~~
 
 ``validate()`` returns a ``ValidationReport``, never an exception for a rule
 failure. A rule that raises anything other than ``AssertionError`` is a defect
@@ -592,9 +645,11 @@ finding about the model.
     report.by_component("T1")
     report.grouped_by_component()   # the shape display.write_results consumes
     report.as_dict()                # JSON-serialisable
+    report.as_toon()                # TOON format for LLM consumption
 
 An issue carries a stable code, so downstream tooling can match on it without
-depending on message text:
+depending on message text. Issues now include ``category`` and ``fix_suggestion``
+fields for AI-assisted remediation:
 
 .. code-block:: json
 
@@ -607,7 +662,10 @@ depending on message text:
       "component_type": "network",
       "component_name": "Net1",
       "attribute": "pump_curve_name",
-      "context": {"ruleset": "epanet_core"}
+      "component_data": {},
+      "context": {"ruleset": "epanet_core"},
+      "category": "Network",
+      "fix_suggestion": "Define the referenced pump curve in the [CURVES] section."
     }
 
 Motivation

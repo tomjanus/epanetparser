@@ -58,7 +58,7 @@ This separation is deliberate: assigning ``component.data`` never validates and
 never raises, so building a model cannot fail because of a rule.
 
 The ``errors`` and ``warnings`` objects
----------------------------------------
+------------------------------------------
 
 When present, the ``errors`` and ``warnings`` objects returned by the factory
 methods are each a dictionary mapping the string names of EPANET network
@@ -107,6 +107,7 @@ reported as a finding about the model.
     report.by_component("T1")
     report.grouped_by_component()   # the shape display.write_results consumes
     report.as_dict()                # JSON-serialisable
+    report.as_toon()                # TOON format for LLM consumption
 
 A single component can also be validated on its own, with only the rules that
 apply to it:
@@ -117,8 +118,77 @@ apply to it:
         for issue in node.validate().errors:
             print(issue.code, issue.component_name, issue.message)
 
-The ``results_as_dict`` and ``results_as_json`` functions in
-:mod:`epanetparser.core.display` translate a report into ``dict`` and JSON forms
-respectively, and :func:`write_results` renders it on the console.
+Issue Details
+^^^^^^^^^^^^^
+
+Each :class:`ValidationIssue` carries rich metadata for programmatic access and
+AI-assisted remediation:
+
+.. code-block:: python
+
+    for issue in report.errors:
+        print(f"Code: {issue.code}")
+        print(f"Message: {issue.message}")
+        print(f"Severity: {issue.severity}")
+        print(f"Rule: {issue.rule_id}")
+        print(f"Ruleset: {issue.ruleset_key}")
+        print(f"Component: {issue.component_type}")
+        print(f"Component Name: {issue.component_name}")
+        print(f"Attribute: {issue.attribute}")
+        print(f"Category: {issue.category}")           # e.g., "Parameter", "Topology"
+        print(f"Fix Suggestion: {issue.fix_suggestion}")  # Imperative fix for AI agents
+        print(f"Component Data: {issue.component_data}")  # Full component data dict
+        print(f"Context: {issue.context}")              # Additional context
+
+The ``category`` field classifies the issue (see :doc:`validation_categories`):
+``Topology``, ``Parameter``, ``Curve``, ``Control``, ``Network``, ``Option``,
+``Energy``, or ``Engineering``.
+
+The ``fix_suggestion`` field provides an imperative remediation hint, suitable
+for automated correction workflows.
+
+The ``component_data`` field contains the complete data dictionary of the
+validated component, making issues self-contained for reporting without needing
+access to the original model.
+
+The ``context`` field carries additional metadata such as the ruleset name,
+component subtype, and any rule-specific context (e.g., ``failing_fields`` from
+:class:`RuleViolation`).
+
+TOON Encoding
+^^^^^^^^^^^^^
+
+For LLM-friendly output, use TOON (Token-Oriented Object Notation) which reduces
+token usage by ~66% compared to JSON:
+
+.. code-block:: python
+
+    from epanetparser.core.toon import encode, encode_validation_report
+
+    # Encode a ValidationReport directly
+    toon_str = report.as_toon()
+
+    # Or encode any JSON-compatible value
+    data = {"users": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]}
+    toon_str = encode(data)
+    # users[2]{id,name}:
+    # 1,Alice
+    # 2,Bob
+
+    # Encode validation report dict with optimized field ordering
+    report_dict = report.as_dict()
+    toon_str = encode_validation_report(report_dict)
+
+The ``encode_validation_report`` function orders fields for consistency
+(``is_valid``, ``counts``, ``issues``) and uses tabular form for the issues
+array.
+
+Display Functions
+^^^^^^^^^^^^^^^^^
+
+The ``results_as_dict``, ``results_as_json``, and ``write_results`` functions in
+:mod:`epanetparser.core.display` translate a report into ``dict``, JSON, and
+console forms respectively. All output formats now include the ``category`` and
+``fix_suggestion`` fields.
 
 See :doc:`rules` for how to write rules and rule sets.
