@@ -40,7 +40,11 @@ from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin
 
-from epanetparser.core.validation.decorators import extract_quick_description
+from epanetparser.core.validation.decorators import (
+    extract_classification,
+    extract_fix_suggestion,
+    extract_quick_description,
+)
 from epanetparser.core.validation.results import Severity
 
 __all__ = [
@@ -52,6 +56,8 @@ __all__ = [
     "collect_rules",
     "default_code",
     "defined",
+    "extract_classification",
+    "extract_fix_suggestion",
     "network_rule",
     "rule",
 ]
@@ -180,6 +186,11 @@ class RuleSpec:
         Human-readable description, from the function docstring.
     is_network : bool
         True for rules declared with :func:`network_rule`.
+    category : str
+        Validation category (e.g., "Topology", "Parameter", "Curve", "Control",
+        "Network", "Option"). Extracted from docstring ``classification :`` field.
+    fix_suggestion : str
+        Imperative fix suggestion for AI agents. Extracted from docstring ``fix :`` field.
 
     Notes
     -----
@@ -196,6 +207,8 @@ class RuleSpec:
     attribute: Optional[str] = None
     description: str = ""
     is_network: bool = False
+    category: str = ""
+    fix_suggestion: str = ""
     context: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -207,6 +220,18 @@ class RuleSpec:
                 self,
                 "description",
                 extract_quick_description(self.func) or self.rule_id,
+            )
+        if not self.category:
+            object.__setattr__(
+                self,
+                "category",
+                extract_classification(self.func),
+            )
+        if not self.fix_suggestion:
+            object.__setattr__(
+                self,
+                "fix_suggestion",
+                extract_fix_suggestion(self.func),
             )
 
     def __str__(self) -> str:
@@ -518,6 +543,8 @@ def _create_implicit_spec(func: Callable[..., Any]) -> RuleSpec:
     
     # Get description from @described decorator or docstring
     description = getattr(func, "description", "") or extract_quick_description(func) or name
+    category = extract_classification(func)
+    fix_suggestion = extract_fix_suggestion(func)
     
     # Check if function has @match decorator applied (it wraps the function)
     # The match decorator adds a __wrapped__ attribute pointing to the original
@@ -532,6 +559,8 @@ def _create_implicit_spec(func: Callable[..., Any]) -> RuleSpec:
         attribute=None,
         description=description,
         is_network=False,
+        category=category,
+        fix_suggestion=fix_suggestion,
     )
     return spec
 

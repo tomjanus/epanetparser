@@ -14,13 +14,21 @@ PATTERN = "WNTREPANETPattern"
 
 @rule(PATTERN, code="E_PATTERN_NAME_MISSING", attribute="name")
 def rule_pattern_has_name(pattern) -> None:
-    """A pattern must have a name."""
+    """A pattern must have a name.
+
+    classification : Parameter
+    fix : Assign a unique identifier to the pattern.
+    """
     assert _defined(pattern, "name"), "Missing pattern name"
 
 
 @rule(PATTERN, code="E_PATTERN_MULTIPLIERS_MISSING", attribute="multipliers")
 def rule_pattern_has_multipliers(pattern) -> None:
-    """A pattern must define a non-empty list of multipliers."""
+    """A pattern must define a non-empty list of multipliers.
+
+    classification : Parameter
+    fix : Provide at least one multiplier value for the pattern.
+    """
     multipliers = pattern.data.get("multipliers")
     assert isinstance(multipliers, list) and len(multipliers) > 0, \
         "Pattern must have a non-empty list of multipliers"
@@ -28,7 +36,11 @@ def rule_pattern_has_multipliers(pattern) -> None:
 
 @rule(PATTERN, code="E_PATTERN_MULTIPLIER_NOT_NUMERIC", attribute="multipliers")
 def rule_pattern_multipliers_numeric(pattern) -> None:
-    """Pattern multipliers must be numeric."""
+    """Pattern multipliers must be numeric.
+
+    classification : Parameter
+    fix : Ensure all multiplier values are numeric (int or float).
+    """
     multipliers = pattern.data.get("multipliers") or []
     assert all(
         isinstance(multiplier, (int, float)) for multiplier in multipliers

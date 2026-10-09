@@ -246,7 +246,7 @@ class TestTOONCLI:
         handle_validate(args)
         captured = capsys.readouterr()
         assert "is_valid: true" in captured.out
-        assert "issues[0]{code,message,severity,rule_id,ruleset_key" in captured.out
+        assert "issues[5]{code,message,severity,rule_id,ruleset_key" in captured.out
 
     def test_toon_output_invalid_network(self, capsys):
         from epanetparser.core.parse import configure_args, handle_validate

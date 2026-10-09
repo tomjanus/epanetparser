@@ -6,6 +6,7 @@ This module provides lightweight decorators for validation rules.
 from typing import Any, Protocol, ParamSpec, TypeVar, Optional, cast, overload
 from dataclasses import dataclass
 import inspect
+import re
 from collections.abc import Callable
 import functools
 
@@ -207,9 +208,74 @@ def match(typename: str, fuzzy: bool = False) -> Callable[[F], F]:
     return type_wrapper
 
 
+def extract_classification(func: Callable) -> str:
+    """Extract 'classification' field from docstring.
+
+    Looks for a line matching 'classification : <category>' (case-insensitive).
+
+    Parameters
+    ----------
+    func : Callable
+        Function or method to extract classification from.
+
+    Returns
+    -------
+    str
+        The classification category, or empty string if not found.
+
+    Examples
+    --------
+    >>> def f():
+    ...     \"\"\"Check something.
+    ...
+    ...     classification : Parameter
+    ...     \"\"\"
+    ...     pass
+    >>> extract_classification(f)
+    'Parameter'
+    """
+    doc = inspect.getdoc(func) or ""
+    match = re.search(r'classification\s*:\s*(.+)', doc, re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def extract_fix_suggestion(func: Callable) -> str:
+    """Extract 'fix' field from docstring.
+
+    Looks for a line matching 'fix : <suggestion>' (case-insensitive).
+    Supports multi-line suggestions using DOTALL flag.
+
+    Parameters
+    ----------
+    func : Callable
+        Function or method to extract fix suggestion from.
+
+    Returns
+    -------
+    str
+        The fix suggestion, or empty string if not found.
+
+    Examples
+    --------
+    >>> def f():
+    ...     \"\"\"Check something.
+    ...
+    ...     fix : Add the missing value.
+    ...     \"\"\"
+    ...     pass
+    >>> extract_fix_suggestion(f)
+    'Add the missing value.'
+    """
+    doc = inspect.getdoc(func) or ""
+    match = re.search(r'fix\s*:\s*(.+)', doc, re.IGNORECASE | re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+
 __all__ = [
     "DescribedCallable",
     "extract_quick_description",
+    "extract_classification",
+    "extract_fix_suggestion",
     "described",
     "match",
 ]

@@ -90,17 +90,17 @@ class TestValidComponents:
                     "coordinates": [2.0, 0.0],
                 }
             ),
-            WNTREPANETLink({"name": "P1", "link_type": "Pipe"}),
+            WNTREPANETLink({"name": "P1", "link_type": "Pipe", "diameter": 0.3, "length": 100.0, "roughness": 100.0}),
             WNTREPANETCurve(
                 {"name": "1", "curve_type": "HEAD", "points": [[0.0, 10.0], [1.0, 5.0]]}
             ),
             WNTREPANETPattern({"name": "1", "multipliers": [1.0, 0.5]}),
             WNTREPANETOptions(
-                {"time": {}, "hydraulic": {}, "energy": {}}
+                {"time": {"duration": 86400, "hydraulic_timestep": 3600, "quality_timestep": 3600, "pattern_timestep": 3600, "report_timestep": 3600, "rule_timestep": 3600}, "hydraulic": {}, "energy": {}}
             ),
             WNTREPANETNetworkInfo({"name": "Net1", "version": "wntr-1.4.0"}),
             WNTREPANETSource(
-                {"node_name": "J1", "source_type": "Chlorine", "strength": 0.001}
+                {"node_name": "J1", "source_type": "CONCEN", "strength": 0.001}
             ),
             WNTREPANETControl({"type": "simple", "condition": "TIME > 8"}),
         ],
@@ -114,10 +114,10 @@ class TestValidComponents:
         assert component.validate().errors == []
 
     def test_a_valid_network_has_no_findings(self, valid_network):
-        """A well-formed model passes the core ruleset cleanly."""
+        """A well-formed model passes the core ruleset cleanly (no errors)."""
         report = valid_network.validate()
         assert report.is_valid
-        assert len(report) == 0
+        assert len(report.errors) == 0
 
 
 class TestJunctionRules:
@@ -291,14 +291,26 @@ class TestOptionsRules:
 
     def test_each_required_group_is_reported(self):
         """A missing option group is named in the report."""
-        required = {"time": {}, "hydraulic": {}, "energy": {}}
+        complete_time = {
+            "duration": 86400,
+            "hydraulic_timestep": 3600,
+            "quality_timestep": 3600,
+            "pattern_timestep": 3600,
+            "report_timestep": 3600,
+            "rule_timestep": 3600,
+        }
         expected = {
             "time": "E_OPTIONS_TIME_MISSING",
             "hydraulic": "E_OPTIONS_HYDRAULIC_MISSING",
             "energy": "E_OPTIONS_ENERGY_MISSING",
         }
         for group, code in expected.items():
-            incomplete = {k: v for k, v in required.items() if k != group}
+            if group == "time":
+                incomplete = {"hydraulic": {}, "energy": {}}
+            elif group == "hydraulic":
+                incomplete = {"time": complete_time, "energy": {}}
+            else:  # energy
+                incomplete = {"time": complete_time, "hydraulic": {}}
             options = WNTREPANETOptions(incomplete)
             assert code in options.validate().codes(), group
             # Only the absent group is reported, so the message is unambiguous.
@@ -306,12 +318,12 @@ class TestOptionsRules:
 
     def test_all_groups_present_is_valid(self):
         """A model with the three required groups passes."""
-        options = WNTREPANETOptions({"time": {}, "hydraulic": {}, "energy": {}})
+        options = WNTREPANETOptions({"time": {"duration": 86400, "hydraulic_timestep": 3600, "quality_timestep": 3600, "pattern_timestep": 3600, "report_timestep": 3600, "rule_timestep": 3600}, "hydraulic": {}, "energy": {}})
         assert options.validate().is_valid
 
     def test_an_unmodelled_user_group_is_not_validated(self):
         """The [USER] group is not part of the model, so nothing is required of it."""
-        options = WNTREPANETOptions({"time": {}, "hydraulic": {}, "energy": {},
+        options = WNTREPANETOptions({"time": {"duration": 86400, "hydraulic_timestep": 3600, "quality_timestep": 3600, "pattern_timestep": 3600, "report_timestep": 3600, "rule_timestep": 3600}, "hydraulic": {}, "energy": {},
                                      "user": {}})
         assert options.validate().is_valid
         assert options.user_options == {}
@@ -362,14 +374,14 @@ class TestSourceAndControlRules:
             {
                 "name": "INP1",
                 "node_name": "J1",
-                "source_type": "Chlorine",
+                "source_type": "CONCEN",
                 "strength": 0.001,
                 "pattern": "1",
             }
         )
         assert source.data["node_name"] == "J1"
         assert source.node_name == "J1"
-        assert source.source_type == "Chlorine"
+        assert source.source_type == "CONCEN"
         assert source.strength == 0.001
         assert source.pattern == "1"
         assert source.validate().is_valid
@@ -387,7 +399,10 @@ class TestSourceAndControlRules:
     @pytest.mark.parametrize("kind", ["simple", "rule"])
     def test_both_control_kinds_are_accepted(self, kind):
         """Both kinds WNTR distinguishes are valid."""
-        control = WNTREPANETControl({"type": kind, "condition": "TIME > 8"})
+        if kind == "simple":
+            control = WNTREPANETControl({"type": kind, "condition": "TIME > 8"})
+        else:
+            control = WNTREPANETControl({"type": kind, "condition": "TIME > 8", "then_actions": [{"link": "P1", "attribute": "status", "value": "OPEN"}]})
         assert control.validate().is_valid
 
 
@@ -403,7 +418,7 @@ class TestContextSelection:
 
     def test_a_custom_ruleset_changes_the_verdict(self):
         """Adding a custom ruleset can turn a passing component into a failing one."""
-        link = WNTREPANETLink({"name": "PRV1", "link_type": "Valve"})
+        link = WNTREPANETLink({"name": "PRV1", "link_type": "Valve", "diameter": 0.3, "setting": 50.0, "valve_type": "PRV"})
         assert link.validate().is_valid
         report = link.validate(["epanet_core", "milp"])
         assert not report.is_valid

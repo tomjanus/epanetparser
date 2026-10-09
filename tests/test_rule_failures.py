@@ -32,8 +32,8 @@ from epanetparser.core.validation import (
 
 MINIMAL = (
     '{"network_info": {"title": "t", "version": "2.2"},'
-    ' "options": {"energy": "NONE", "hydraulic": "NONE", "quality": "NONE",'
-    ' "time": "NONE"},'
+    ' "options": {"energy": {"demand_charge": 0}, "hydraulic": {}, "quality": {},'
+    ' "time": {"duration": 86400, "hydraulic_timestep": 3600, "quality_timestep": 3600, "pattern_timestep": 3600, "report_timestep": 3600, "rule_timestep": 3600}},'
     ' "nodes": [{"name": "J1", "node_type": "Junction", "elevation": 0}],'
     ' "links": [], "patterns": [], "curves": [], "sources": [], "controls": []}'
 )
@@ -102,6 +102,7 @@ BROKEN_COMPONENT_RULE = '''
     def rule_raises_type_error(node):
         """Raise something that is not an assertion."""
         raise TypeError("deliberate failure inside a rule")
+    rule_raises_type_error.__module__ = "broken_test_ruleset"
 '''
 
 #: A network rule that fails with something that is not an assertion.

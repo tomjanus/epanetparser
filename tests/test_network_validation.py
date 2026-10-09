@@ -65,7 +65,7 @@ class TestNetworkIndex:
         assert sorted(index.nodes) == ["J1", "R1"]
         assert sorted(index.links) == ["P1"]
         assert sorted(index.patterns) == ["1"]
-        assert sorted(index.curves) == ["1"]
+        assert sorted(index.curves) == ["1", "2"]
 
     def test_unknown_collections_are_empty_rather_than_an_error(self, minimal_network):
         """A rule may probe an optional collection without guarding first."""
@@ -74,7 +74,7 @@ class TestNetworkIndex:
     def test_curves_are_grouped_by_type(self, minimal_network):
         """Curve types can be asked for as a set, for type-aware rules."""
         index = minimal_network.build_index()
-        assert index.curves_of_type("HEAD") == {"1"}
+        assert index.curves_of_type("HEAD") == {"1", "2"}
         assert index.curves_of_type("VOLUME") == set()
 
     def test_the_index_is_cached_until_invalidated(self, minimal_network):
@@ -184,10 +184,10 @@ class TestWholeNetworkValidation:
     """Validating a network rather than a component."""
 
     def test_a_valid_network_has_no_findings(self, minimal_network):
-        """The minimal model satisfies the core ruleset completely."""
+        """The minimal model satisfies the core ruleset completely (no errors)."""
         report = minimal_network.validate()
         assert report.is_valid
-        assert len(report) == 0
+        assert len(report.errors) == 0
 
     def test_component_issues_come_before_network_issues(self):
         """A report reads from the specific to the general."""
@@ -226,7 +226,8 @@ class TestWholeNetworkValidation:
         grouped = network.validate().grouped_by_component()
         # Findings are grouped by the component they concern; a network-level
         # finding is attributed to the network, which is named.
-        assert set(grouped) == {"minimal"}
+        # The broken network has issues with the network, a node, and a curve.
+        assert set(grouped) == {"minimal", "J1", "2"}
         assert all(isinstance(issues, list) for issues in grouped.values())
 
     def test_validation_does_not_modify_the_model(self, minimal_network):
@@ -467,7 +468,7 @@ class TestReporting:
         assert minimal_network.report() == {
             "nodes": 2,
             "links": 1,
-            "curves": 1,
+            "curves": 2,
             "patterns": 1,
         }
 

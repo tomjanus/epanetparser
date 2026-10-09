@@ -270,6 +270,11 @@ def configure_args(args: List[str]) -> argparse.Namespace:
         default=False,
         help="Omit sha256 digest in JSON and dict parsing reports"
     )
+    display.add_argument("--verbose",
+        action="store_true",
+        default=False,
+        help="Show full fix suggestions in console output"
+    )
     
     # ========== CONVERT SUBCOMMAND ==========
     convert_parser = subparsers.add_parser(
@@ -430,9 +435,13 @@ def handle_validate(args: argparse.Namespace) -> None:
         # the human-readable component counts are not printed alongside it.
         _print_json(json.dumps(report.as_dict(), indent=2))
     else:
-        if len(report):
-            write_results(filename, use_emoji=useemoji, results=report)
-        _print_report(network, filename, args, include_digest)
+        if args.terse_report and report.is_valid:
+            # Terse report for valid models: only print component counts
+            _print_report(network, filename, args, include_digest)
+        else:
+            if len(report):
+                write_results(filename, use_emoji=useemoji, results=report, verbose=args.verbose)
+            _print_report(network, filename, args, include_digest)
 
     if not report.is_valid and not raise_error:
         sys.exit(2)

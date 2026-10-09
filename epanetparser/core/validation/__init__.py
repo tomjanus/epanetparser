@@ -92,6 +92,8 @@ from epanetparser.core.validation.rules import (
 from epanetparser.core.validation.decorators import (
     DescribedCallable,
     described,
+    extract_classification,
+    extract_fix_suggestion,
     extract_quick_description,
     match,
 )
@@ -129,6 +131,8 @@ __all__ = [
     "discover_classes",
     "discover_methods_in_class",
     "discover_ruleset_modules",
+    "extract_classification",
+    "extract_fix_suggestion",
     "extract_quick_description",
     "FileInfo",
     "get_rule_methods",

@@ -127,6 +127,10 @@ def show_ruleset(ruleset_key: str, component: str = None) -> None:
             )
             if spec.attribute:
                 console.print(f"      [magenta]attribute[/magenta] {spec.attribute}")
+            if spec.category:
+                console.print(f"      [cyan]category[/cyan] {spec.category}")
+            if spec.fix_suggestion:
+                console.print(f"      [green]fix[/green] {spec.fix_suggestion}")
             if spec.description:
                 console.print(f"      [dim italic]{spec.description}[/dim italic]")
 

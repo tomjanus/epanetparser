@@ -662,6 +662,8 @@ class Validator:
                     attribute=spec.attribute,
                     component_data=component_data,
                     context=context,
+                    category=spec.category,
+                    fix_suggestion=spec.fix_suggestion,
                 )
             )
         except Exception as err:

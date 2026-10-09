@@ -12,11 +12,19 @@ NETWORK_INFO = "WNTREPANETNetworkInfo"
 
 @rule(NETWORK_INFO, code="E_NETWORK_NAME_MISSING", attribute="name")
 def rule_network_has_name(network_info) -> None:
-    """A model must have a name, otherwise it cannot be identified in a report."""
+    """A model must have a name, otherwise it cannot be identified in a report.
+
+    classification : Parameter
+    fix : Provide a name for the network model.
+    """
     assert network_info.name, "Network missing a name"
 
 
 @rule(NETWORK_INFO, code="W_NETWORK_VERSION_MISSING", attribute="version")
 def warn_network_has_version(network_info) -> None:
-    """A model should record the version of the tool that wrote it."""
+    """A model should record the version of the tool that wrote it.
+
+    classification : Parameter
+    fix : Add version metadata to the network model for traceability.
+    """
     assert network_info.version, "Network missing a version"

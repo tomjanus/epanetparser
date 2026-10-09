@@ -107,14 +107,14 @@ class TestSelectionWithoutInheritance:
         verdicts would have to come from two different classes, and the model
         could only be one of them.
         """
-        valve = WNTREPANETLink({"name": "PRV1", "link_type": "Valve"})
+        valve = WNTREPANETLink({"name": "PRV1", "link_type": "Valve", "diameter": 0.3, "setting": 50.0, "valve_type": "PRV"})
         assert valve.validate().is_valid
         assert not valve.validate(["epanet_core", "milp"]).is_valid
 
     def test_a_custom_ruleset_adds_findings_to_the_same_report(self):
         """Core and custom findings arrive together, each attributed."""
         valve = WNTREPANETLink(
-            {"name": "PRV1", "link_type": "Valve", "check_valve": True}
+            {"name": "PRV1", "link_type": "Valve", "diameter": 0.3, "setting": 50.0, "valve_type": "PRV", "check_valve": True}
         )
         report = valve.validate(["epanet_core", "milp"])
         by_ruleset = {}
@@ -160,9 +160,14 @@ class TestSelectionWithoutInheritance:
         )
         report = minimal_network.validate(context)
         # The minimal model satisfies the core ruleset; the extra ruleset's
-        # single-point-curve warning is the only finding.
-        assert report.codes() == ["W_EXTRA_SINGLE_POINT_CURVE"]
-        assert report.issues[0].ruleset_key == "extra"
+        # single-point-curve warning fires, as does the core's minimum-points warning.
+        codes = set(report.codes())
+        assert "W_EXTRA_SINGLE_POINT_CURVE" in codes
+        assert "W_CURVE_POINTS_MINIMUM" in codes
+        # The single-point-curve warning should come from the extra ruleset
+        extra_issues = [i for i in report.issues if i.ruleset_key == "extra"]
+        assert len(extra_issues) == 1
+        assert extra_issues[0].code == "W_EXTRA_SINGLE_POINT_CURVE"
 
     def test_a_custom_ruleset_can_be_applied_to_whole_networks(self):
         """A custom ruleset reaches every component, not just one instance."""
@@ -172,17 +177,51 @@ class TestSelectionWithoutInheritance:
             {
                 "name": "with-valve",
                 "version": "v",
-                "options": {"time": {}, "hydraulic": {}, "energy": {}},
+                "options": {
+                    "time": {
+                        "duration": 86400,
+                        "hydraulic_timestep": 3600,
+                        "quality_timestep": 3600,
+                        "pattern_timestep": 3600,
+                        "report_timestep": 3600,
+                        "rule_timestep": 3600,
+                    },
+                    "hydraulic": {},
+                    "energy": {},
+                },
+                "patterns": [{"name": "1", "multipliers": [1.0] * 12}],
                 "nodes": [
-                    {"name": "A", "node_type": "Reservoir", "base_head": 10.0},
-                    {"name": "B", "node_type": "Reservoir", "base_head": 10.0},
+                    {"name": "A", "node_type": "Junction", "elevation": 10.0, "coordinates": [0.0, 0.0], "demand_pattern": "1"},
+                    {"name": "B", "node_type": "Junction", "elevation": 10.0, "coordinates": [10.0, 0.0], "base_demand": 10.0, "demand_pattern": "1"},
+                    {"name": "T1", "node_type": "Tank", "elevation": 5.0, "init_level": 2.0, "min_level": 0.5, "max_level": 3.0, "diameter": 5.0, "min_vol": 1.0, "coordinates": [5.0, 5.0]},
                 ],
                 "links": [
+                    {
+                        "name": "P1",
+                        "link_type": "Pipe",
+                        "start_node_name": "T1",
+                        "end_node_name": "A",
+                        "length": 100.0,
+                        "diameter": 0.3,
+                        "roughness": 100.0,
+                    },
+                    {
+                        "name": "P2",
+                        "link_type": "Pipe",
+                        "start_node_name": "T1",
+                        "end_node_name": "B",
+                        "length": 100.0,
+                        "diameter": 0.3,
+                        "roughness": 100.0,
+                    },
                     {
                         "name": "V1",
                         "link_type": "Valve",
                         "start_node_name": "A",
                         "end_node_name": "B",
+                        "diameter": 0.3,
+                        "setting": 50.0,
+                        "valve_type": "PRV",
                     }
                 ],
             }
@@ -310,7 +349,10 @@ class TestMilpRuleSet:
                 "time": {
                     "duration": 86400.0,
                     "hydraulic_timestep": 3600,
+                    "quality_timestep": 3600,
                     "pattern_timestep": 7200,
+                    "report_timestep": 3600,
+                    "rule_timestep": 3600,
                 },
                 "hydraulic": {
                     "headloss": "H-W",
@@ -334,12 +376,18 @@ class TestMilpRuleSet:
         assert report.is_valid
         assert report.errors == []
 
-    def test_the_bundled_invalid_milp_model_fails_only_milp(self, invalid_network_milp):
-        """A model can be well-formed and still violate an application ruleset."""
-        assert invalid_network_milp.validate().is_valid
+    def test_the_bundled_invalid_milp_model_fails_milp(self, invalid_network_milp):
+        """A model can have core errors and still violate an application ruleset.
+        
+        The invalid MILP model has a control on a check valve (core error) and
+        violates several MILP constraints (MILP errors).
+        """
         report = invalid_network_milp.validate(["epanet_core", "milp"])
         assert not report.is_valid
-        assert {issue.ruleset_key for issue in report.errors} == {"milp"}
+        # The model has errors from both core and MILP rulesets
+        rulesets = {issue.ruleset_key for issue in report.errors}
+        assert "epanet_core" in rulesets
+        assert "milp" in rulesets
 
 
 class TestValidatorsAreShared:

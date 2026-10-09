@@ -120,6 +120,11 @@ class ValidationIssue:
         needing access to the original model.
     context : Dict[str, Any]
         Additional contextual metadata supplied by the engine or the rule.
+    category : str
+        Validation category (e.g., "Topology", "Parameter", "Curve", "Control",
+        "Network", "Option"). Empty if not provided by the rule.
+    fix_suggestion : str
+        Imperative fix suggestion for AI agents. Empty if not provided by the rule.
 
     Notes
     -----
@@ -153,6 +158,8 @@ class ValidationIssue:
     attribute: Optional[str] = None
     component_data: Dict[str, Any] = field(default_factory=dict)
     context: Dict[str, Any] = field(default_factory=dict)
+    category: str = ""
+    fix_suggestion: str = ""
 
     @property
     def is_error(self) -> bool:
@@ -181,7 +188,8 @@ class ValidationIssue:
         Dict[str, Any]
             Mapping with the issue ``code``, ``message``, ``severity``,
             ``rule_id``, ``ruleset_key``, ``component_type``,
-            ``component_name``, ``attribute``, ``component_data`` and ``context``.
+            ``component_name``, ``attribute``, ``component_data``, ``context``,
+            ``category``, and ``fix_suggestion``.
 
         Examples
         --------
@@ -199,6 +207,8 @@ class ValidationIssue:
             "attribute": self.attribute,
             "component_data": dict(self.component_data),
             "context": dict(self.context),
+            "category": self.category,
+            "fix_suggestion": self.fix_suggestion,
         }
 
 

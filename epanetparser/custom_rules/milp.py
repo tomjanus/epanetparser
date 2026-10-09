@@ -105,6 +105,9 @@ def rule_pattern_length(pattern) -> None:
     resolution, not from the model: see :data:`MULTIPLIER_LENGTH`. Whether the
     model agrees on that resolution is checked separately by
     :func:`rule_pattern_timestep`.
+
+    classification : Parameter
+    fix : Ensure the pattern has exactly 12 multipliers for a 24-hour horizon with 2-hour pattern timestep.
     """
     multipliers = pattern.data.get("multipliers") or []
     assert len(multipliers) == MULTIPLIER_LENGTH, (
@@ -123,6 +126,9 @@ def rule_no_tank_curve(node) -> None:
     -----
     The formulation models tanks as cylinders of constant cross-section, so a
     volume curve would contradict its storage model.
+
+    classification : Curve
+    fix : Remove the volume curve reference from the tank definition.
     """
     assert node.data.get("vol_curve_name") is None, \
         "Volume curves for tanks not supported"
@@ -131,7 +137,11 @@ def rule_no_tank_curve(node) -> None:
 @rule(NODE, code="E_MILP_TANK_OVERFLOW", attribute="overflow")
 @match("Tank")
 def rule_no_tank_overflow(node) -> None:
-    """A tank must not overflow."""
+    """A tank must not overflow.
+
+    classification : Parameter
+    fix : Set the tank overflow attribute to false or remove it.
+    """
     assert node.data.get("overflow") in (None, False), \
         "Overflows on tanks not supported"
 
@@ -144,6 +154,9 @@ def rule_no_emitters(node) -> None:
     -----
     An emitter is an unbounded demand, which the linear formulation has no
     term for.
+
+    classification : Parameter
+    fix : Set the emitter coefficient to zero or remove the emitter definition.
     """
     assert node.emitter_coefficient in (None, 0), \
         "Emitters with nonzero coefficients not supported"
@@ -157,6 +170,9 @@ def rule_check_valves(link) -> None:
     -----
     The formulation takes pump states as decision variables and cannot also
     represent a state constraint arising from flow direction.
+
+    classification : Parameter
+    fix : Remove the check valve setting from the pipe definition.
     """
     assert link.data.get("check_valve") in (False, None), \
         "Check valves not supported"
@@ -165,7 +181,11 @@ def rule_check_valves(link) -> None:
 @rule(LINK, code="E_MILP_VALVE", attribute="link_type")
 @match("Valve")
 def rule_no_valves_allowed(link) -> None:
-    """A model must not contain valves."""
+    """A model must not contain valves.
+
+    classification : Topology
+    fix : Remove all valve links from the network model.
+    """
     assert False, "Valve links not supported"
 
 
@@ -177,13 +197,20 @@ def rule_no_controls_allowed(control) -> None:
     -----
     The formulation decides pump states itself, so a control that changes them
     would contradict its own decisions.
+
+    classification : Control
+    fix : Remove all control definitions from the network model.
     """
     assert False, "Controls not supported"
 
 
 @rule(OPTIONS, code="E_MILP_TIME_HORIZON", attribute="duration")
 def rule_simulation_time_horizon(options) -> None:
-    """The simulation must cover at least the full schedule horizon."""
+    """The simulation must cover at least the full schedule horizon.
+
+    classification : Option
+    fix : Set the simulation duration to at least 86400 seconds (24 hours).
+    """
     time_options = options.time_options or {}
     duration = time_options.get("duration")
     required = TIME_HORIZON * 3600
@@ -195,7 +222,11 @@ def rule_simulation_time_horizon(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_TIMESTEP", attribute="hydraulic_timestep")
 def rule_hydraulic_timestep(options) -> None:
-    """The hydraulic timestep must equal the schedule timestep."""
+    """The hydraulic timestep must equal the schedule timestep.
+
+    classification : Option
+    fix : Set the hydraulic timestep to 3600 seconds (1 hour).
+    """
     time_options = options.time_options or {}
     timestep = time_options.get("hydraulic_timestep")
     required = TIME_STEP * 3600
@@ -214,6 +245,9 @@ def rule_pattern_timestep(options) -> None:
     This is what makes :func:`rule_pattern_length` meaningful: the number of
     multipliers a pattern needs follows from the pattern timestep, so the two
     settings have to agree before a pattern length can be judged.
+
+    classification : Option
+    fix : Set the pattern timestep to 7200 seconds (2 hours).
     """
     time_options = options.time_options or {}
     timestep = time_options.get("pattern_timestep")
@@ -226,7 +260,11 @@ def rule_pattern_timestep(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_HEADLOSS_MODEL", attribute="headloss")
 def rule_headloss_model(options) -> None:
-    """The head loss formulation must be one the tool implements."""
+    """The head loss formulation must be one the tool implements.
+
+    classification : Option
+    fix : Set the headloss model to either H-W (Hazen-Williams) or D-W (Darcy-Weisbach).
+    """
     hydraulic_options = options.hydraulic_options or {}
     model = hydraulic_options.get("headloss")
     supported = ", ".join(HEADLOSS_MODELS)
@@ -236,7 +274,11 @@ def rule_headloss_model(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_VISCOSITY", attribute="viscosity")
 def rule_viscosity(options) -> None:
-    """The fluid viscosity must be 1.0."""
+    """The fluid viscosity must be 1.0.
+
+    classification : Option
+    fix : Set the fluid viscosity to 1.0.
+    """
     hydraulic_options = options.hydraulic_options or {}
     viscosity = hydraulic_options.get("viscosity")
     assert viscosity == 1, f"Viscosity is not 1.0: {viscosity}"
@@ -244,7 +286,11 @@ def rule_viscosity(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_SPECIFIC_GRAVITY", attribute="specific_gravity")
 def rule_specific_gravity(options) -> None:
-    """The fluid specific gravity must be 1.0."""
+    """The fluid specific gravity must be 1.0.
+
+    classification : Option
+    fix : Set the fluid specific gravity to 1.0.
+    """
     hydraulic_options = options.hydraulic_options or {}
     gravity = hydraulic_options.get("specific_gravity")
     assert gravity == 1, f"Specific gravity is not 1.0: {gravity}"
@@ -252,7 +298,11 @@ def rule_specific_gravity(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_DEMAND_MODEL", attribute="demand_model")
 def rule_demand_model(options) -> None:
-    """Demands must be fixed, not pressure driven."""
+    """Demands must be fixed, not pressure driven.
+
+    classification : Option
+    fix : Set the demand model to DDA (demand-driven analysis).
+    """
     hydraulic_options = options.hydraulic_options or {}
     model = hydraulic_options.get("demand_model")
     assert model == DEMAND_MODEL, \
@@ -261,7 +311,11 @@ def rule_demand_model(options) -> None:
 
 @rule(OPTIONS, code="E_MILP_PRESSURE_UNITS", attribute="inpfile_pressure_units")
 def rule_pressure_units(options) -> None:
-    """The model must not override pressure units."""
+    """The model must not override pressure units.
+
+    classification : Option
+    fix : Remove the pressure units override from the hydraulic options.
+    """
     hydraulic_options = options.hydraulic_options or {}
     units = hydraulic_options.get("inpfile_pressure_units")
     assert units is None, f"Unsupported pressure units: {units}"
@@ -275,6 +329,9 @@ def rule_zero_demand_charge(options) -> None:
     -----
     The tool optimises pump operation only; a per-unit demand charge would add
     a term the formulation does not carry.
+
+    classification : Option
+    fix : Set the demand charge to zero in the energy options.
     """
     energy_options = options.energy_options or {}
     charge = energy_options.get("demand_charge")
@@ -296,6 +353,9 @@ def warn_inpfile_units(options) -> None:
     units is still usable, but its numbers will not match the simulation's.
     Reporting this as a warning rather than an error keeps such models
     simulable while making the unit mismatch visible.
+
+    classification : Option
+    fix : Convert the input file units to LPS (litres per second) or acknowledge the unit mismatch.
     """
     hydraulic_options = options.hydraulic_options or {}
     units = hydraulic_options.get("inpfile_units")

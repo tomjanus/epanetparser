@@ -307,6 +307,7 @@ def write_results(
     warnings: Optional[Dict[str, Sequence[Any]]] = None,
     use_emoji: bool = True,
     results: Optional[Any] = None,
+    verbose: bool = False,
 ) -> None:
     """Render a result report on the console.
 
@@ -328,6 +329,8 @@ def write_results(
         A :class:`~epanetparser.core.validation.results.ValidationReport` to
         render. When given, ``errors`` and ``warnings`` are ignored and the
         report is grouped by component internally.
+    verbose : bool
+        If True, show full fix suggestions. If False, truncate to 80 chars.
 
     Notes
     -----
@@ -368,7 +371,7 @@ def write_results(
         console.print()
     for finding in network_findings:
         console.print(_finding_line(finding, NETWORK_KEY, use_emoji))
-        _print_finding_details(finding, use_emoji)
+        _print_finding_details(finding, use_emoji, verbose)
     console.print()
 
     for component, findings in merged.items():
@@ -376,7 +379,7 @@ def write_results(
         console.print()
         for finding in findings:
             console.print(_finding_line(finding, component, use_emoji))
-            _print_finding_details(finding, use_emoji)
+            _print_finding_details(finding, use_emoji, verbose)
         console.print()
     console.print(Rule(style="blue"))
 
@@ -408,7 +411,7 @@ def _finding_line(finding: Any, component: str, use_emoji: bool) -> Padding:
     )
 
 
-def _print_finding_details(finding: Any, use_emoji: bool) -> None:
+def _print_finding_details(finding: Any, use_emoji: bool, verbose: bool = False) -> None:
     """Print detailed information for a finding (rule_id, ruleset, attribute, context)."""
     if not isinstance(finding, ValidationIssue):
         return
@@ -419,6 +422,15 @@ def _print_finding_details(finding: Any, use_emoji: bool) -> None:
         details.append(f"  Ruleset: {finding.ruleset_key}")
     if finding.attribute:
         details.append(f"  Attribute: {finding.attribute}")
+    if finding.category:
+        details.append(f"  Category: {finding.category}")
+    if finding.fix_suggestion:
+        if verbose:
+            details.append(f"  Fix: {finding.fix_suggestion}")
+        else:
+            # Truncate to 80 chars in non-verbose mode
+            truncated = finding.fix_suggestion[:80] + "..." if len(finding.fix_suggestion) > 80 else finding.fix_suggestion
+            details.append(f"  Fix: {truncated} (use --verbose for full)")
     
     # Print failing_fields if present in context
     if "failing_fields" in finding.context:
