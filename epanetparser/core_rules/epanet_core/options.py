@@ -189,6 +189,9 @@ def rule_option_demand_model_valid(options) -> None:
     """
     hyd_opts = options.hydraulic_options or {}
     model = hyd_opts.get("demand_model", "DDA")
+    # Accept "DD" as legacy alias for "DDA" (EPANET 2.0 format)
+    if model == "DD":
+        model = "DDA"
     valid_models = {"DDA", "PDA", "PDD"}
     assert model in valid_models, \
         f"Demand model must be one of {valid_models}, got {model}"
@@ -518,6 +521,6 @@ def warn_units_inconsistent(options) -> None:
     fix : Align input file units with simulation units.
     """
     hyd_opts = options.hydraulic_options or {}
-    units = hyd_opts.get("inpfile_units", "LPS")
+    _ = hyd_opts.get("inpfile_units", "LPS")
     # Simulation is typically in SI (LPS)
     assert True, "Verify input file units match simulation units"

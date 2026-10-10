@@ -37,9 +37,10 @@ a model with the default arguments:
 
 Five example networks ship with the package under ``epanetparser.networks.core``,
 so there is a model to try this against without downloading anything. Both
-``.inp`` and WNTR ``.json`` files are accepted. An ``.inp`` file is converted to
-WNTR's JSON representation with WNTR before being parsed, so the model you get
-back is always built from the JSON form.
+``.inp`` and WNTR ``.json`` files are accepted. An ``.inp`` file is parsed
+directly using the standalone INP parser in ``epanetparser.core.io`` (a
+vendored copy of WNTR 1.4.0's parsing code), without requiring WNTR to be
+installed. WNTR is only needed for hydraulic simulation.
 
 If the input parses, the ``network`` variable holds the model and ``errors`` is
 ``None``. If it does not, ``network`` is ``None`` and ``errors`` holds the
@@ -183,8 +184,53 @@ The ``encode_validation_report`` function orders fields for consistency
 (``is_valid``, ``counts``, ``issues``) and uses tabular form for the issues
 array.
 
+Hydraulic Simulation
+^^^^^^^^^^^^^^^^^^^^
+
+To run hydraulic simulations, install the ``simulation`` extra (requires WNTR
+and the EPANET binary):
+
+.. code-block:: console
+
+    $ pip install .[simulation]
+
+Then use the ``to_wntr()`` method to convert the validated model to a
+WNTR-compatible ``WaterNetworkModel``:
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from importlib.resources import files
+    import wntr
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    report = network.validate()
+    if not report.is_valid:
+        raise SystemExit(f"Model validation failed: {report.errors}")
+
+    # Convert to WNTR model and simulate
+    wn = network.to_wntr()
+    sim = wntr.sim.EpanetSimulator(wn)
+    results = sim.run_sim()
+
+    # Access results
+    print(results.node['head'])      # Nodal head (pressure + elevation)
+    print(results.node['pressure'])  # Nodal pressure
+    print(results.link['flowrate'])  # Link flow rates
+    print(results.link['velocity'])  # Link velocities
+
+The ``to_wntr()`` method converts the validated epanetparser model to a
+WNTR-compatible ``WaterNetworkModel`` (the vendored version from
+``epanetparser.core.io.network.model``) that can be simulated using any WNTR
+simulator (``EpanetSimulator``, ``WNTRSimulator``). The conversion preserves
+all component properties, curves, patterns, controls, and options.
+
 Display Functions
-^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
 
 The ``results_as_dict``, ``results_as_json``, and ``write_results`` functions in
 :mod:`epanetparser.core.display` translate a report into ``dict``, JSON, and

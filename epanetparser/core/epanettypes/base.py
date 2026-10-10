@@ -101,15 +101,19 @@ class WNTREPANETType(ABC):
     #: Collection this component belongs to within a network. Optional.
     component_kind: Optional[str] = None
 
-    def __init__(self, data: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, data: Optional[Dict[str, Any]] = None, **kwargs) -> None:
         """Store the component's fields.
 
         Parameters
         ----------
         data : Optional[Dict[str, Any]]
             Fields parsed from the source document.
+        **kwargs
+            Additional fields passed as keyword arguments (for WNTR element compatibility).
         """
-        self.data: Dict[str, Any] = data if data is not None else {}
+        combined_data = data if data is not None else {}
+        combined_data.update(kwargs)
+        self.data: Dict[str, Any] = combined_data
 
     def validate(self, context: Any = None) -> ValidationReport:
         """Run the selected validation rules against this component.

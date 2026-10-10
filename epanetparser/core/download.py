@@ -219,9 +219,9 @@ def download_networks(
                     downloaded_count += 1
                 except requests.HTTPError as exc:
                     progress.console.print(f"[red]✗ HTTP Error:[/red] {network_filename} - {exc.response.status_code} {exc.response.reason}")
-                except requests.ConnectionError as exc:
+                except requests.ConnectionError:
                     progress.console.print(f"[red]✗ Connection Error:[/red] {network_filename} - Failed to connect")
-                except requests.Timeout as exc:
+                except requests.Timeout:
                     progress.console.print(f"[red]✗ Timeout:[/red] {network_filename} - Request timed out")
                 except (OSError, PermissionError) as exc:
                     progress.console.print(f"[red]✗ File Error:[/red] {network_filename} - {exc}")
@@ -257,7 +257,7 @@ def download_networks(
                 if not quiet:
                     rprint(f"[red]✗ Value Error {network_filename}:[/red] {exc}")
     if not quiet:
-        rprint(f"\n[bold green]Download complete![/bold green] ")
+        rprint("\n[bold green]Download complete![/bold green] ")
         rprint(f"[green]Successfully downloaded {downloaded_count}/{total_files} files[/green]")
         rprint(f"[green]Files saved to:[/green] {output_dir.resolve()}\n")
     return downloaded_count

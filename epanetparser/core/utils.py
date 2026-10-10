@@ -144,7 +144,7 @@ def get_package_root() -> pathlib.Path:
     except (AttributeError, ImportError) as exception:
         # Fallback for older importlib.resources API
         if hasattr(resources, 'path'):
-            with resources.path(hydroforge, '__init__.py') as init_path:
+            with resources.path('epanetparser', '__init__.py') as init_path:
                 hydroforge_package_dir = init_path.parent
                 return hydroforge_package_dir.parent.parent
         raise FileNotFoundError(

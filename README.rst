@@ -31,8 +31,10 @@ networks. **WNTR** is a high-level Python wrapper that uses **EPANET** as a simu
 and extends it with additional functionalities. For more information on **WNTR**, please
 refer to its documentation at http://wntr.readthedocs.io
 
-Both WNTR `JSON` and native **EPANET** `INP` files are accepted. An `INP` file is converted
-to the JSON representation before being parsed by `epanetparser`.
+Both WNTR `JSON` and native **EPANET** `INP` files are accepted. An `INP` file is parsed
+using a standalone INP parser (a vendored copy of WNTR 1.4.0's parsing code in
+`epanetparser.core.io`), which does not require WNTR to be installed. WNTR is only
+required for hydraulic simulation via the optional ``[simulation]`` extra.
 
 Installation
 ------------
@@ -47,6 +49,8 @@ Requires **Python 3.10 or later**. EPANETParser can be installed with either
     ❯ git clone git@github.com:tomjanus/epanetparser.git
     ❯ cd epanetparser
     ❯ poetry install
+    # For simulation support:
+    ❯ poetry install --extras simulation
 
 **Using pip:**
 
@@ -55,6 +59,13 @@ Requires **Python 3.10 or later**. EPANETParser can be installed with either
     ❯ git clone git@github.com:tomjanus/epanetparser.git
     ❯ cd epanetparser
     ❯ pip install .
+    # For simulation support:
+    ❯ pip install .[simulation]
+
+The core parsing and validation functionality has no external dependencies beyond
+the standard library and ``rich``, ``pyyaml``, ``platformdirs``. WNTR (and its
+EPANET binary dependency) is only required for hydraulic simulation and is
+installed via the ``simulation`` extra.
 
 Quick start
 -----------
@@ -133,10 +144,7 @@ Or from Python, where parsing and validation are separate steps:
 .. code-block:: python
 
     from epanetparser.core.epanettypes.network import WNTREPANETNetwork
-
     from importlib.resources import files
-
-    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 
     model = files("epanetparser.networks.core") / "Net1.inp"
     network, errors, warnings = WNTREPANETNetwork.from_file(model)
@@ -146,6 +154,34 @@ Or from Python, where parsing and validation are separate steps:
     report = network.validate()
     for issue in report.errors:
         print(issue.code, issue.component_name, issue.message)
+
+To run a hydraulic simulation (requires ``pip install .[simulation]``):
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from importlib.resources import files
+    import wntr
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    report = network.validate()
+    if not report.is_valid:
+        raise SystemExit(f"Model validation failed: {report.errors}")
+
+    # Convert to WNTR model and simulate
+    wn = network.to_wntr()
+    sim = wntr.sim.EpanetSimulator(wn)
+    results = sim.run_sim()
+
+    # Access results
+    print(results.node['head'])      # Nodal head (pressure + elevation)
+    print(results.node['pressure'])  # Nodal pressure
+    print(results.link['flowrate'])  # Link flow rates
+    print(results.link['velocity'])  # Link velocities
 
 CLI usage
 ---------
@@ -236,6 +272,54 @@ EPANET version targeted when writing `INP` (default 2.2):
 .. code-block:: console
 
     ❯ epanetparser convert Net1.json Net1_2_0.inp --epanet-version 2.0
+
+Hydraulic Simulation
+--------------------
+
+To run hydraulic simulations, install the ``simulation`` extra:
+
+.. code-block:: console
+
+    ❯ pip install .[simulation]
+
+This installs WNTR and its EPANET binary dependency. Then use the Python API:
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from importlib.resources import files
+    import wntr
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    report = network.validate()
+    if not report.is_valid:
+        raise SystemExit(f"Model validation failed: {report.errors}")
+
+    # Convert to WNTR model and simulate
+    wn = network.to_wntr()
+    sim = wntr.sim.EpanetSimulator(wn)
+    results = sim.run_sim()
+
+    # Access results
+    print(results.node['head'])      # Nodal head (pressure + elevation)
+    print(results.node['pressure'])  # Nodal pressure
+    print(results.link['flowrate'])  # Link flow rates
+    print(results.link['velocity'])  # Link velocities
+
+The ``to_wntr()`` method converts the validated epanetparser model to a
+WNTR-compatible ``WaterNetworkModel`` that can be simulated using any WNTR
+simulator (EpanetSimulator, WNTRSimulator). The conversion preserves all
+component properties, curves, patterns, controls, and options.
+
+**Important**: The INP parser in ``epanetparser.core.io`` is a vendored copy of
+WNTR 1.4.0's parsing code. It does not require WNTR to be installed for parsing
+and validation. WNTR is only needed for the simulation step. This separation
+allows you to use epanetparser for static validation in environments where
+EPANET/WNTR cannot be installed.
 
 Downloading additional networks
 -------------------------------
@@ -454,7 +538,7 @@ See ``docs/source/agentic.md`` for detailed documentation and integration patter
 
 
 EPANETParser structure
-----------------------
+---------------------
 
 **EPANETParser** is built from the following components:
 
@@ -471,6 +555,10 @@ EPANETParser structure
 * ``epanetparser.core_rules`` and ``epanetparser.custom_rules`` -- the two rule
   set packages. They are searched by the same pass, and are distinguished only
   by the ``__is_core__`` attribute in their module metadata.
+* ``epanetparser.core.io`` -- a **vendored copy of WNTR 1.4.0's network model
+  and INP parser**. This module provides standalone INP parsing and WNTR model
+  construction without requiring WNTR as a runtime dependency. It is used
+  internally for ``.inp`` file parsing and for the ``convert`` command.
 
 The pipeline is:
 

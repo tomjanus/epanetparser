@@ -270,7 +270,7 @@ class NetworkIndex:
         store = getattr(self.network, collection, None)
         if store is None:
             return ()
-        if isinstance(store, Mapping):
+        if hasattr(store, 'values'):  # Registry or Mapping
             return list(store.values())
         return list(store)
 
@@ -586,7 +586,7 @@ class Validator:
         store = getattr(network, collection, None)
         if store is None:
             return ()
-        if isinstance(store, Mapping):
+        if hasattr(store, 'values'):  # Registry or Mapping
             return list(store.values())
         if isinstance(store, (list, tuple)):
             return store

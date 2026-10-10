@@ -510,16 +510,16 @@ class TestReporting:
 class TestSelection:
     """A network's rulesets are chosen by the caller."""
 
-    def test_the_core_ruleset_is_the_default(self, valid_network):
+    def test_the_core_ruleset_is_the_default(self, minimal_valid_network):
         """A well-formed model passes core validation and needs no argument."""
-        report = valid_network.validate()
+        report = minimal_valid_network.validate()
         assert report.is_valid
         assert {issue.ruleset_key for issue in report} <= {"epanet_core"}
 
-    def test_adding_a_custom_ruleset_can_only_add_findings(self, valid_network):
+    def test_adding_a_custom_ruleset_can_only_add_findings(self, minimal_valid_network):
         """A custom ruleset never rescues a model the core ruleset rejects."""
-        core = valid_network.validate()
-        combined = valid_network.validate(["epanet_core", "milp"])
+        core = minimal_valid_network.validate()
+        combined = minimal_valid_network.validate(["epanet_core", "milp"])
         assert len(combined) >= len(core)
         assert set(core.codes()) <= set(combined.codes())
 

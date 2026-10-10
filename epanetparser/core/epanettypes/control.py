@@ -51,6 +51,11 @@ class WNTREPANETControl(WNTREPANETType):
         return self.data.get("type")
 
     @property
+    def name(self) -> str:
+        """Control name."""
+        return self.data.get("name")
+
+    @property
     def condition(self) -> str:
         """Control condition as written in the model."""
         return self.data.get("condition")

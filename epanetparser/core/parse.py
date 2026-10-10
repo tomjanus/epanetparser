@@ -375,7 +375,6 @@ def handle_validate(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    use_pretty = args.pretty_output or explicit_formats == 0
     use_json = args.json_output
     use_toon = args.toon_output
 

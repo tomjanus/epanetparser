@@ -205,7 +205,7 @@ class ConfigLoader:
         epanetparser fail on a read-only HOME.
         """
         # Load defaults to ensure they are available for merging with user config
-        default_config_dict = self._load_defaults()
+        self._load_defaults()
         if config_path:
             self._config_path = Path(config_path)
         else:

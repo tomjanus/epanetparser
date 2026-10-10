@@ -45,6 +45,12 @@ from epanetparser.core.epanettypes import (
     WNTREPANETLink,
     WNTREPANETNetworkInfo,
     WNTREPANETNode,
+    WNTREPANETJunction,
+    WNTREPANETReservoir,
+    WNTREPANETTank,
+    WNTREPANETPipe,
+    WNTREPANETPump,
+    WNTREPANETValve,
     WNTREPANETOptions,
     WNTREPANETPattern,
     WNTREPANETSource,
@@ -260,12 +266,32 @@ class WNTRJSONParser:
             WNTREPANETPattern(item)
             for item in self._records("patterns", WNTREPANETPattern)
         ]
-        self.nodes = [
-            WNTREPANETNode(item) for item in self._records("nodes", WNTREPANETNode)
-        ]
-        self.links = [
-            WNTREPANETLink(item) for item in self._records("links", WNTREPANETLink)
-        ]
+        # Nodes: create subclass based on node_type
+        self.nodes = []
+        for item in self._records("nodes", WNTREPANETNode):
+            node_type = item.get("node_type", "Junction")
+            if node_type == "Junction":
+                self.nodes.append(WNTREPANETJunction(item))
+            elif node_type == "Reservoir":
+                self.nodes.append(WNTREPANETReservoir(item))
+            elif node_type == "Tank":
+                self.nodes.append(WNTREPANETTank(item))
+            else:
+                self.nodes.append(WNTREPANETNode(item))
+        
+        # Links: create subclass based on link_type
+        self.links = []
+        for item in self._records("links", WNTREPANETLink):
+            link_type = item.get("link_type", "Pipe")
+            if link_type == "Pipe":
+                self.links.append(WNTREPANETPipe(item))
+            elif link_type == "Pump":
+                self.links.append(WNTREPANETPump(item))
+            elif link_type == "Valve":
+                self.links.append(WNTREPANETValve(item))
+            else:
+                self.links.append(WNTREPANETLink(item))
+        
         self.sources = [
             WNTREPANETSource(item) for item in self._records("sources", WNTREPANETSource)
         ]

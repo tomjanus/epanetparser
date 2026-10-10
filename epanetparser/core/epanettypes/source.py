@@ -67,6 +67,11 @@ class WNTREPANETSource(WNTREPANETType):
         return "source"
 
     @property
+    def name(self) -> str:
+        """Source name."""
+        return self.data.get("name")
+
+    @property
     def node_name(self) -> str:
         """Name of the node the constituent is injected into."""
         return self.data.get("node_name")

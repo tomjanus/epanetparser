@@ -261,11 +261,12 @@ class RuleSpec:
         -------
         bool
             True if :attr:`component_type` is ``None`` (the rule applies to
-            every component) or matches the class name of ``component``.
+            every component) or matches the class name of ``component`` or
+            any of its base classes.
         """
         if self.component_type is None:
             return True
-        return type(component).__name__ == self.component_type
+        return self.component_type in {cls.__name__ for cls in type(component).__mro__}
 
     def issue_context(self) -> Dict[str, Any]:
         """Return the static contextual metadata carried by this rule."""
@@ -545,10 +546,6 @@ def _create_implicit_spec(func: Callable[..., Any]) -> RuleSpec:
     description = getattr(func, "description", "") or extract_quick_description(func) or name
     category = extract_classification(func)
     fix_suggestion = extract_fix_suggestion(func)
-    
-    # Check if function has @match decorator applied (it wraps the function)
-    # The match decorator adds a __wrapped__ attribute pointing to the original
-    wrapped = getattr(func, "__wrapped__", func)
     
     spec = RuleSpec(
         rule_id=name,

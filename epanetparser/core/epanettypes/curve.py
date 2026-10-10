@@ -68,6 +68,11 @@ class WNTREPANETCurve(WNTREPANETType):
         return self.data.get("curve_type")
 
     @property
+    def curve_type(self) -> str:
+        """Curve type, for example ``"HEAD"`` (alias for ``type``)."""
+        return self.data.get("curve_type")
+
+    @property
     def name(self) -> str:
         """Curve name."""
         return self.data.get("name")

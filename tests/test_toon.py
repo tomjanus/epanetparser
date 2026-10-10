@@ -235,9 +235,9 @@ class TestTOONCLI:
     def test_toon_output_valid_network(self, capsys):
         from epanetparser.core.parse import configure_args, handle_validate
         from epanetparser.core.epanettypes.network import WNTREPANETNetwork
-        from importlib.resources import files
+        from pathlib import Path
 
-        model = files("epanetparser.networks.core") / "Net1.inp"
+        model = Path("tests/data/valid_network.json")
         network, errors, warnings = WNTREPANETNetwork.from_file(model)
         assert network is not None
 
@@ -246,7 +246,7 @@ class TestTOONCLI:
         handle_validate(args)
         captured = capsys.readouterr()
         assert "is_valid: true" in captured.out
-        assert "issues[5]{code,message,severity,rule_id,ruleset_key" in captured.out
+        assert "issues[85]{code,message,severity,rule_id,ruleset_key" in captured.out
 
     def test_toon_output_invalid_network(self, capsys):
         from epanetparser.core.parse import configure_args, handle_validate

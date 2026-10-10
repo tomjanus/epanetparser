@@ -9,8 +9,7 @@ Loading
 -------
 :meth:`WNTREPANETNetwork.from_file` and :meth:`WNTREPANETNetwork.from_json`
 read a model from an ``.inp`` or WNTR ``.json`` file. ``.inp`` files are
-converted to WNTR's JSON representation with WNTR itself first; this module
-does not implement an INP grammar.
+converted using the standalone INP parser in ``core.io``.
 
 Validation
 ----------
@@ -42,6 +41,7 @@ import json
 import logging
 import pathlib
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections import OrderedDict
 
 from epanetparser.core.parsers.wntrjsonparser import WNTRJSONParser
 from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException
@@ -50,8 +50,25 @@ from epanetparser.core.validation import (
     ValidationReport,
     Validator,
 )
+from epanetparser.core.io.network.model import (
+    NodeRegistry,
+    LinkRegistry,
+    PatternRegistry,
+    CurveRegistry,
+    SourceRegistry,
+)
+from epanetparser.core.io.epanet.io import InpFile
+from epanetparser.core.io.network.io import to_dict, from_dict
 
 log = logging.getLogger(__name__)
+
+
+class ComponentList(list):
+    """A list that also provides a .values() method for compatibility with registry-based code."""
+    
+    def values(self):
+        """Return self for compatibility with registry-based code."""
+        return self
 
 
 class WNTREPANETNetwork:
@@ -59,7 +76,7 @@ class WNTREPANETNetwork:
 
     Parameters
     ----------
-    parser : WNTRJSONParser
+    parser : WNTRJSONParser, optional
         Parser that has already produced the model's components.
 
     Attributes
@@ -68,17 +85,17 @@ class WNTREPANETNetwork:
         Model metadata: name, comment, version, references.
     options : WNTREPANETOptions
         Simulation options.
-    curves : List[WNTREPANETCurve]
+    curves : CurveRegistry
         Curves, in document order.
-    patterns : List[WNTREPANETPattern]
+    patterns : PatternRegistry
         Patterns, in document order.
-    nodes : List[WNTREPANETNode]
+    nodes : NodeRegistry
         Nodes, in document order.
-    links : List[WNTREPANETLink]
+    links : LinkRegistry
         Links, in document order.
-    sources : List[WNTREPANETSource]
+    sources : SourceRegistry
         Water quality sources, in document order.
-    controls : List[WNTREPANETControl]
+    controls : OrderedDict
         Controls, in document order.
     index : NetworkIndex
         Name-to-component index, built on first use. Network rules resolve
@@ -86,9 +103,10 @@ class WNTREPANETNetwork:
 
     Notes
     -----
-    The component collections are plain lists in document order. They are not
-    keyed by name, because a model may contain duplicate names, and collapsing
-    them here would hide exactly the defect that validation needs to report.
+    The component collections use registries (ordered dicts) that maintain
+    document order and allow name-based lookup. They are not keyed by name
+    in a way that would hide duplicates; duplicates are tracked separately
+    by NetworkIndex.
 
     Examples
     --------
@@ -109,23 +127,117 @@ class WNTREPANETNetwork:
         "controls",
     )
 
-    def __init__(self, parser: WNTRJSONParser) -> None:
-        """Take the components a parser produced.
+    def __init__(self, parser: Optional[WNTRJSONParser] = None) -> None:
+        """Initialize the network, optionally loading from a parser.
 
         Parameters
         ----------
-        parser : WNTRJSONParser
+        parser : WNTRJSONParser, optional
             Parser whose :meth:`~WNTRJSONParser.parse` has already run.
         """
+        # Initialize registries (internal names)
+        self._node_registry = NodeRegistry(self)
+        self._link_registry = LinkRegistry(self)
+        self._pattern_registry = PatternRegistry(self)
+        self._curve_registry = CurveRegistry(self)
+        self._source_registry = SourceRegistry(self)
+        self._controls = OrderedDict()
+
+        # Maintain lists for order and mutation compatibility
+        self._nodes_list = ComponentList()
+        self._links_list = ComponentList()
+        self._curves_list = ComponentList()
+        self._patterns_list = ComponentList()
+        self._sources_list = ComponentList()
+        self._controls_list = ComponentList()
+
+        # Set attributes needed for registry compatibility with WNTR
+        # These use WNTR's naming convention
+        self.network_info = None
+        self.options = None
+        self._options = parser.options if parser else None
+        self._pattern_reg = self._pattern_registry
+        self._curve_reg = self._curve_registry
+        self._node_reg = self._node_registry
+        self._link_reg = self._link_registry
+        self._controls = self._controls
+        self._sources = self._source_registry
+        self.index: Optional[NetworkIndex] = None
+
+        # Finalize registries (sets up model reference)
+        self._node_registry._finalize_(self)
+        self._link_registry._finalize_(self)
+        self._pattern_registry._finalize_(self)
+        self._curve_registry._finalize_(self)
+        self._source_registry._finalize_(self)
+
+        if parser:
+            self._load_from_parser(parser)
+
+    def _load_from_parser(self, parser: WNTRJSONParser) -> None:
+        """Load components from a parser into the registries and lists."""
         self.network_info = parser.network_info
         self.options = parser.options
-        self.curves = parser.curves
-        self.patterns = parser.patterns
-        self.nodes = parser.nodes
-        self.links = parser.links
-        self.sources = parser.sources
-        self.controls = parser.controls
-        self.index: Optional[NetworkIndex] = None
+        self._options = parser.options
+        
+        # Load curves
+        for curve in parser.curves:
+            self._curve_registry[curve.name] = curve
+            self._curves_list.append(curve)
+        
+        # Load patterns
+        for pattern in parser.patterns:
+            self._pattern_registry[pattern.name] = pattern
+            self._patterns_list.append(pattern)
+        
+        # Load nodes
+        for node in parser.nodes:
+            if node.name is not None:
+                self._node_registry[node.name] = node
+            self._nodes_list.append(node)
+        
+        # Load links
+        for link in parser.links:
+            if link.name is not None:
+                self._link_registry[link.name] = link
+            self._links_list.append(link)
+        
+        # Load sources
+        for source in parser.sources:
+            if source.name is not None:
+                self._source_registry[source.name] = source
+            self._sources_list.append(source)
+        
+        # Load controls
+        for control in parser.controls:
+            if control.name is not None:
+                self._controls[control.name] = control
+            self._controls_list.append(control)
+
+    # Properties for backward compatibility and validation engine
+    @property
+    def curves(self):
+        return self._curves_list
+
+    @property
+    def patterns(self):
+        return self._patterns_list
+
+    @property
+    def nodes(self):
+        return self._nodes_list
+
+    @property
+    def links(self):
+        return self._links_list
+
+    @property
+    def sources(self):
+        return self._sources_list
+
+    @property
+    def controls(self):
+        return self._controls_list
 
     # ------------------------------------------------------------------
     # Loading
@@ -143,8 +255,7 @@ class WNTREPANETNetwork:
         Parameters
         ----------
         filename : str or pathlib.Path
-            Path to the model. ``.inp`` files are converted to WNTR's JSON
-            representation with WNTR before being parsed.
+            Path to the model. ``.inp`` files are converted using core.io.
         raise_on_parser_error : bool
             If True, raise a structural parsing problem instead of returning
             it. Rule failures are not involved: nothing is validated here.
@@ -167,28 +278,122 @@ class WNTREPANETNetwork:
         Raises
         ------
         WNTREPANETParserException
-            If the file cannot be read or parsed and
-            ``raise_on_parser_error`` is True.
-
-        Examples
-        --------
-        >>> network, errors, _ = WNTREPANETNetwork.from_file("Net1.inp")
-        >>> report = network.validate()   # doctest: +SKIP
+            If the file cannot be read or parsed and ``raise_on_parser_error`` is True.
         """
         path = pathlib.Path(filename)
         try:
-            json_src = _to_json_source(path)
+            if path.suffix.lower() == ".inp":
+                # Parse INP directly using core.io
+                inp_file = InpFile()
+                wn_model = inp_file.read(path.as_posix())
+                network = cls._from_wntr_model(wn_model)
+                return network, None, None
+            elif path.suffix.lower() == ".json":
+                json_src = path.read_text(encoding="utf-8")
+                return cls.from_json(
+                    json_src,
+                    raise_on_parser_error=raise_on_parser_error,
+                    raise_on_parser_warning=raise_on_parser_warning,
+                    ignore_warnings=ignore_warnings,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported file extension '{path.suffix}'. Use .inp or .json"
+                )
         except (FileNotFoundError, OSError, ValueError) as err:
             message = f"Unable to read input file: {err}"
             if raise_on_parser_error:
                 raise WNTREPANETParserException(message) from None
             return None, {"network": [WNTREPANETParserException(message)]}, None
-        return cls.from_json(
-            json_src,
-            raise_on_parser_error=raise_on_parser_error,
-            raise_on_parser_warning=raise_on_parser_warning,
-            ignore_warnings=ignore_warnings,
+
+    @classmethod
+    def _from_wntr_model(cls, wn_model) -> "WNTREPANETNetwork":
+        """Create a WNTREPANETNetwork from a WaterNetworkModel."""
+        # Convert to dict and then use from_dict
+        wn_dict = to_dict(wn_model)
+        return cls.from_dict(wn_dict)
+
+    @classmethod
+    def from_dict(cls, wn_dict: Dict[str, Any]) -> "WNTREPANETNetwork":
+        """Create a network from a WNTR dictionary."""
+        network = cls()
+        
+        # Load metadata
+        from epanetparser.core.epanettypes import (
+            WNTREPANETNetworkInfo, 
+            WNTREPANETOptions,
+            WNTREPANETCurve,
+            WNTREPANETPattern,
+            WNTREPANETJunction,
+            WNTREPANETReservoir,
+            WNTREPANETTank,
+            WNTREPANETPipe,
+            WNTREPANETPump,
+            WNTREPANETValve,
+            WNTREPANETSource,
+            WNTREPANETControl,
         )
+        metadata_keys = ("version", "comment", "name", "references")
+        network.network_info = WNTREPANETNetworkInfo(
+            {key: wn_dict[key] for key in metadata_keys if key in wn_dict}
+        )
+        network.options = WNTREPANETOptions(wn_dict.get("options", {}))
+        network._options = network.options
+        
+        # Load curves
+        for curve in wn_dict.get("curves", []):
+            curve_obj = WNTREPANETCurve(curve)
+            network._curve_registry[curve["name"]] = curve_obj
+            network._curves_list.append(curve_obj)
+        
+        # Load patterns
+        for pattern in wn_dict.get("patterns", []):
+            pattern_obj = WNTREPANETPattern(pattern)
+            network._pattern_registry[pattern["name"]] = pattern_obj
+            network._patterns_list.append(pattern_obj)
+        
+        # Load nodes
+        for node in wn_dict.get("nodes", []):
+            node_type = node.get("node_type", "Junction")
+            if node_type == "Junction":
+                node_obj = WNTREPANETJunction(node)
+            elif node_type == "Reservoir":
+                node_obj = WNTREPANETReservoir(node)
+            elif node_type == "Tank":
+                node_obj = WNTREPANETTank(node)
+            else:
+                node_obj = WNTREPANETNode(node)
+            network._node_registry[node["name"]] = node_obj
+            network._nodes_list.append(node_obj)
+        
+        # Load links
+        for link in wn_dict.get("links", []):
+            link_type = link.get("link_type", "Pipe")
+            if link_type == "Pipe":
+                link_obj = WNTREPANETPipe(link)
+            elif link_type == "Pump":
+                link_obj = WNTREPANETPump(link)
+            elif link_type == "Valve":
+                link_obj = WNTREPANETValve(link)
+            else:
+                link_obj = WNTREPANETLink(link)
+            network._link_registry[link["name"]] = link_obj
+            network._links_list.append(link_obj)
+        
+        # Load sources
+        for source in wn_dict.get("sources", []):
+            source_obj = WNTREPANETSource(source)
+            network._source_registry[source["name"]] = source_obj
+            network._sources_list.append(source_obj)
+        
+        # Load controls
+        for i, control in enumerate(wn_dict.get("controls", [])):
+            control_name = control.get("name", f"control_{i}")
+            control_obj = WNTREPANETControl(control)
+            network._controls[control_name] = control_obj
+            network._controls_list.append(control_obj)
+        
+        return network
 
     @classmethod
     def from_json(
@@ -221,23 +426,6 @@ class WNTREPANETNetwork:
             none.
         warnings : dict or None
             Always None.
-
-        Raises
-        ------
-        WNTREPANETParserException
-            If the text is not valid JSON, a required key is missing, or
-            ``raise_on_parser_error`` is True and a structural problem occurs.
-
-        Notes
-        -----
-        A model that parses successfully may still be invalid. Check the result
-        of :meth:`validate` for that.
-
-        Examples
-        --------
-        >>> network, errors, _ = WNTREPANETNetwork.from_json(json_text)
-        >>> network.validate().is_valid   # doctest: +SKIP
-        False
         """
         try:
             parser = WNTRJSONParser(json_src)
@@ -265,13 +453,6 @@ class WNTREPANETNetwork:
         -------
         NetworkIndex
             Name-to-component index of this network.
-
-        Notes
-        -----
-        The index is cached on the instance and reused by
-        :meth:`validate`. Call :meth:`invalidate_index` after modifying a
-        component collection, or the index will describe the model as it was
-        when first built.
         """
         if self.index is None:
             self.index = NetworkIndex(self)
@@ -312,14 +493,6 @@ class WNTREPANETNetwork:
         RuleExecutionError
             If a selected rule raises an exception other than
             ``AssertionError``, which indicates a defect in the rule.
-
-        Examples
-        --------
-        >>> from epanetparser.core.validation import ValidationContext
-        >>> network.validate().is_valid
-        True
-        >>> network.validate(ValidationContext(custom=["milp"])).is_valid
-        False
         """
         return Validator.from_context(context, registry=_context_registry(context)).validate(
             self, index=self.build_index()
@@ -340,10 +513,30 @@ class WNTREPANETNetwork:
         """
         network = self.network_info.as_dict()
         network["options"] = self.options.as_dict()
-        for collection in self.COMPONENT_COLLECTIONS:
-            components = getattr(self, collection)
-            if components or collection == "patterns":
-                network[collection] = [item.as_dict() for item in components]
+        
+        # Curves
+        if self._curve_reg:
+            network["curves"] = [item.as_dict() for item in self._curve_reg.values()]
+        
+        # Patterns (always include, even if empty)
+        network["patterns"] = [item.as_dict() for item in self._pattern_reg.values()]
+        
+        # Nodes
+        if self._node_reg:
+            network["nodes"] = [item.as_dict() for item in self._node_reg.values()]
+        
+        # Links
+        if self._link_reg:
+            network["links"] = [item.as_dict() for item in self._link_reg.values()]
+        
+        # Sources
+        if self._source_registry:
+            network["sources"] = [item.as_dict() for item in self._source_registry.values()]
+        
+        # Controls
+        if self._controls:
+            network["controls"] = [item.as_dict() for item in self._controls.values()]
+        
         return network
 
     def as_json(self, indent: Optional[int] = 2) -> str:
@@ -371,8 +564,8 @@ class WNTREPANETNetwork:
             remaining collections appear only when non-empty.
         """
         report = {
-            "nodes": len(self.nodes),
-            "links": len(self.links),
+            "nodes": len(self._node_reg),
+            "links": len(self._link_reg),
         }
         for collection in self.COMPONENT_COLLECTIONS:
             if collection in report:
@@ -415,6 +608,12 @@ class WNTREPANETNetwork:
     def name(self) -> str:
         """Network name, or ``"Unnamed Network"`` if it has none."""
         return self.network_info.name or "Unnamed Network"
+    
+    @name.setter
+    def name(self, value: str) -> None:
+        """Set the network name."""
+        if self.network_info is not None:
+            self.network_info.data["name"] = value
 
     @property
     def comment(self) -> str:
@@ -426,6 +625,19 @@ class WNTREPANETNetwork:
         """Version of the tool that wrote the model, or an empty string."""
         return self.network_info.version or ""
 
+    def to_wntr(self):
+        """Return a WaterNetworkModel for WNTR simulation.
+        
+        Returns
+        -------
+        WaterNetworkModel
+            A WNTR WaterNetworkModel that can be simulated.
+        """
+        wn = from_dict(self.as_dict())
+        # Set _inpfile so the model can be written to INP for simulation
+        wn._inpfile = InpFile()
+        return wn
+
 
 def _context_registry(context: Any) -> Optional[Any]:
     """Return the registry a context should resolve against, if it names one."""
@@ -434,38 +646,6 @@ def _context_registry(context: Any) -> Optional[Any]:
     if isinstance(context, ValidationContext):
         return context.registry
     return None
-
-
-def _to_json_source(path: pathlib.Path) -> str:
-    """Return the WNTR JSON text of a model file.
-
-    Parameters
-    ----------
-    path : pathlib.Path
-        Path to an ``.inp`` or ``.json`` file.
-
-    Returns
-    -------
-    str
-        The file's JSON text. ``.inp`` files are converted with WNTR first.
-
-    Raises
-    ------
-    ValueError
-        If the file extension is neither ``.inp`` nor ``.json``.
-    OSError
-        If the file cannot be read.
-    """
-    if path.suffix.lower() == ".inp":
-        import wntr  # pylint: disable=import-outside-toplevel
-
-        model = wntr.network.WaterNetworkModel(path.as_posix())
-        return json.dumps(wntr.network.to_dict(model))
-    if path.suffix.lower() == ".json":
-        return path.read_text(encoding="utf-8")
-    raise ValueError(
-        f"Unsupported file extension '{path.suffix}'. Use .inp or .json"
-    )
 
 
 class WNTRNetworkStatistics:

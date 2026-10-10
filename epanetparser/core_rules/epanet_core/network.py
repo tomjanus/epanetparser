@@ -166,7 +166,7 @@ def rule_link_endpoints_exist(network) -> None:
     index = network.index
     dangling: List[str] = []
     nodes = index.collection("nodes")
-    for link in network.links:
+    for link in network.links.values():
         name = _name_of(link)
         for field, endpoint in LINK_ENDPOINT_FIELDS:
             node_name = link.data.get(field)
@@ -184,7 +184,7 @@ def rule_link_curves_exist(network) -> None:
     classification : Network
     fix : Ensure all link curve references (pump_curve_name, efficiency_curve_name, headloss_curve_name) point to existing curves.
     """
-    dangling = _dangling(network.links, LINK_CURVE_FIELDS, "curves", network.index)
+    dangling = _dangling(network.links.values(), LINK_CURVE_FIELDS, "curves", network.index)
     assert not dangling, (
         f"Links reference undefined curves: {', '.join(dangling)}"
     )
@@ -197,7 +197,7 @@ def rule_node_curves_exist(network) -> None:
     classification : Network
     fix : Ensure all node curve references (vol_curve_name) point to existing curves.
     """
-    dangling = _dangling(network.nodes, NODE_CURVE_FIELDS, "curves", network.index)
+    dangling = _dangling(network.nodes.values(), NODE_CURVE_FIELDS, "curves", network.index)
     assert not dangling, (
         f"Nodes reference undefined curves: {', '.join(dangling)}"
     )
@@ -210,7 +210,7 @@ def rule_node_patterns_exist(network) -> None:
     classification : Network
     fix : Ensure all node pattern references (demand_pattern, head_pattern_name) point to existing patterns.
     """
-    dangling = _dangling(network.nodes, NODE_PATTERN_FIELDS, "patterns", network.index)
+    dangling = _dangling(network.nodes.values(), NODE_PATTERN_FIELDS, "patterns", network.index)
     assert not dangling, (
         f"Nodes reference undefined patterns: {', '.join(dangling)}"
     )
@@ -250,9 +250,9 @@ def rule_control_links_exist(network) -> None:
     """
     index = network.index
     links = index.collection("links")
-    controls = getattr(network, "controls", ()) or ()
+    controls = getattr(network, "controls", {}) or {}
     dangling: List[str] = []
-    for control in controls:
+    for control in controls.values():
         name = _name_of(control)
         link_name = control.data.get("link")
         if link_name and link_name not in links:
@@ -356,7 +356,6 @@ def rule_valve_not_connected_to_valve(network) -> None:
     index = network.index
     links = index.collection("links")
     valve_names = {name for name, link in links.items() if getattr(link, "type", None) == "Valve"}
-    nodes = index.collection("nodes")
     dangling: List[str] = []
     for valve_name in valve_names:
         valve = links[valve_name]
@@ -384,7 +383,7 @@ def rule_no_self_loops(network) -> None:
     fix : Ensure start_node_name and end_node_name are different for all links.
     """
     dangling: List[str] = []
-    for link in network.links:
+    for link in network.links.values():
         start = link.data.get("start_node_name")
         end = link.data.get("end_node_name")
         if start and end and start == end:
@@ -677,7 +676,7 @@ def warn_tank_turnover_low(network) -> None:
             max_level = node.data.get("max_level", 0)
             if diam > 0 and max_level > 0:
                 import math
-                volume = math.pi * (diam/2)**2 * max_level
+                _ = math.pi * (diam/2)**2 * max_level
                 # Rough estimate: assume avg demand ~ 10 L/s per junction
                 # This is a very rough static check
                 assert True, "Tank turnover checked at simulation time"
@@ -751,7 +750,6 @@ def warn_multiple_sources_same_node(network) -> None:
     classification : Engineering
     fix : Consolidate sources at the same node.
     """
-    index = network.index
     sources = getattr(network, "sources", ()) or ()
     node_sources: dict[str, list[str]] = {}
     for src in sources:

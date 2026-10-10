@@ -11,7 +11,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 # Disable logging before importing epanetparser to avoid stdout pollution
 # which breaks the JSON-RPC protocol over stdio
@@ -44,7 +44,7 @@ from epanetparser.core.validation import (
     ValidationContext,
     validate,
 )
-from epanetparser.core.toon import encode_validation_report
+
 
 
 server = Server("epanetparser")
@@ -195,7 +195,7 @@ async def _convert_format_impl(
             "direction": "inp_to_json" if input_file.suffix.lower() == ".inp" else "json_to_inp",
         }))]
 
-    except (OSError, TypeError, ValueError, KeyError, EpanetException) as   :
+    except (OSError, TypeError, ValueError, KeyError, EpanetException) as exc:
         return [TextContent(type="text", text=json.dumps({
             "success": False,
             "error": f"Conversion failed: {str(exc)}",
@@ -398,7 +398,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
         ValueError,
         EpanetException,
         WNTREPANETParserException,
-    ) as exc:
+    ) as e:
         return CallToolResult(
             content=[TextContent(type="text", text=f"Error: {str(e)}")],
             isError=True,

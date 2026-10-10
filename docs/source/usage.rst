@@ -30,6 +30,22 @@ Or using ``pip``:
     $ cd epanetparser
     $ pip install .
 
+To enable hydraulic simulation, install the ``simulation`` extra:
+
+.. code-block:: console
+
+    $ pip install .[simulation]
+
+Or with Poetry:
+
+.. code-block:: console
+
+    $ poetry install --extras simulation
+
+The core parsing and validation functionality has no external dependencies beyond
+the standard library and ``rich``, ``pyyaml``, ``platformdirs``. WNTR (and its
+EPANET binary dependency) is only required for hydraulic simulation.
+
 To display the usage guide:
 
 .. code-block:: console
@@ -108,8 +124,10 @@ model and returns either:
       --verbose             Show full fix suggestions in console output (default:
                             truncated to 80 chars)
 
-Both INP and WNTR JSON files are accepted. An ``.inp`` file is converted to
-WNTR's JSON representation with WNTR before being parsed.
+Both INP and WNTR JSON files are accepted. An ``.inp`` file is parsed directly
+using the standalone INP parser in ``epanetparser.core.io`` (a vendored copy of
+WNTR 1.4.0's parsing code), without requiring WNTR to be installed. WNTR is
+only needed for hydraulic simulation.
 
 An invalid model produces a report categorised by component, with each finding
 carrying a stable code:
@@ -298,6 +316,55 @@ writing INP, defaulting to 2.2:
 
     $ epanetparser convert Net1.inp Net1.json --indent 4
     $ epanetparser convert Net1.json Net1.inp --epanet-version 2.0
+
+Hydraulic Simulation
+--------------------
+
+To run hydraulic simulations, install the ``simulation`` extra (requires WNTR
+and the EPANET binary):
+
+.. code-block:: console
+
+    $ pip install .[simulation]
+
+Then use the Python API to parse, validate, and simulate:
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+    from importlib.resources import files
+    import wntr
+
+    model = files("epanetparser.networks.core") / "Net1.inp"
+    network, errors, warnings = WNTREPANETNetwork.from_file(model)
+    if network is None:
+        raise SystemExit(f"Could not parse the model: {errors}")
+
+    report = network.validate()
+    if not report.is_valid:
+        raise SystemExit(f"Model validation failed: {report.errors}")
+
+    # Convert to WNTR model and simulate
+    wn = network.to_wntr()
+    sim = wntr.sim.EpanetSimulator(wn)
+    results = sim.run_sim()
+
+    # Access results
+    print(results.node['head'])      # Nodal head (pressure + elevation)
+    print(results.node['pressure'])  # Nodal pressure
+    print(results.link['flowrate'])  # Link flow rates
+    print(results.link['velocity'])  # Link velocities
+
+The ``to_wntr()`` method converts the validated epanetparser model to a
+WNTR-compatible ``WaterNetworkModel`` that can be simulated using any WNTR
+simulator (``EpanetSimulator``, ``WNTRSimulator``). The conversion preserves
+all component properties, curves, patterns, controls, and options.
+
+**Important**: The INP parser in ``epanetparser.core.io`` is a vendored copy of
+WNTR 1.4.0's parsing code. It does not require WNTR to be installed for parsing
+and validation. WNTR is only needed for the simulation step. This separation
+allows you to use epanetparser for static validation in environments where
+EPANET/WNTR cannot be installed.
 
 Downloading additional networks
 -------------------------------

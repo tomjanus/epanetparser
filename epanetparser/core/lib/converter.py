@@ -4,25 +4,27 @@ This module provides functionality to convert EPANET network models between the
 traditional INP text format and WNTR's JSON representation. The conversion is
 bidirectional, supporting both INP-to-JSON and JSON-to-INP transformations.
 
-The converter uses the WNTR (Water Network Tool for Resilience) library to parse
-and generate network models, ensuring compatibility with WNTR's internal data
-structures and validation.
+The converter uses the standalone core.io module to parse and generate network 
+models, ensuring compatibility with WNTR's internal data structures and validation
+without requiring the full WNTR package.
 """
 from pathlib import Path
 import json
-import wntr
+
+from epanetparser.core.io.epanet.io import InpFile
+from epanetparser.core.io.network.io import to_dict, from_dict, write_inpfile
 
 
 class WNTRINPJSONConverter:
     """Bidirectional converter between EPANET INP files and WNTR JSON format.
     
     This class handles conversion between EPANET's native INP text format and
-    WNTR's JSON representation. It uses WNTR's WaterNetworkModel to parse and
-    generate network models.
+    WNTR's JSON representation. It uses the standalone core.io module to parse
+    and generate network models.
     
     Args:
         preserve_order: If True, attempt to preserve element ordering during
-                       conversion (currently unused, reserved for future use).
+                        conversion (currently unused, reserved for future use).
     """
 
     @staticmethod
@@ -40,13 +42,14 @@ class WNTRINPJSONConverter:
         Raises:
             ValueError: If the input file does not have a .inp extension.
             FileNotFoundError: If the input file does not exist.
-            Exception: If WNTR fails to parse the INP file.
+            Exception: If core.io fails to parse the INP file.
         """
         inp_path = Path(inp_path)
         if inp_path.suffix.lower() != ".inp":
             raise ValueError("Input must be a .inp file")
-        _network = wntr.network.WaterNetworkModel(str(inp_path.as_posix()))
-        return json.dumps(_network.to_dict(), indent=indent, ensure_ascii=False)
+        inp_file = InpFile()
+        wn = inp_file.read(str(inp_path))
+        return json.dumps(to_dict(wn), indent=indent, ensure_ascii=False)
     
     
     @staticmethod
@@ -141,19 +144,13 @@ class WNTRINPJSONConverter:
         # Read formatted JSON
         with open(json_path, "r", encoding="utf-8") as f:
             wn_dict = json.load(f)
-        # Reconstruct network model
-        wn = wntr.network.WaterNetworkModel()
-        wn.from_dict(wn_dict)
+        # Reconstruct network model using core.io
+        wn = from_dict(wn_dict)
         # Output path
         if inp_path is None:
             inp_path = json_path.with_suffix(".inp")
         else:
             inp_path = Path(inp_path)
-        # Write INP
-        wntr.network.write_inpfile(
-            wn,
-            str(inp_path),
-            version=version
-        )
+        # Write INP using core.io
+        write_inpfile(wn, str(inp_path), version=version)
         return str(inp_path)
-

@@ -46,15 +46,19 @@ class WNTREPANETOptions(WNTREPANETType):
 
     component_kind: str = "options"
 
-    def __init__(self, data: Dict[str, Any]) -> None:
+    def __init__(self, data: Optional[Dict[str, Any]] = None, **kwargs) -> None:
         """Store the options.
 
         Parameters
         ----------
-        data : Dict[str, Any]
+        data : Dict[str, Any], optional
             Mapping of option group name to that group's settings.
+        **kwargs
+            Option groups passed as keyword arguments (for WNTR compatibility).
         """
-        super().__init__(data)
+        combined_data = data if data is not None else {}
+        combined_data.update(kwargs)
+        super().__init__(combined_data)
 
     @property
     def time_options(self) -> Optional[Dict[str, Any]]:

@@ -12,7 +12,11 @@ try:
 except ImportError:
     MCP_AVAILABLE = False
 
-pytestmark = pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp package not installed")
+# Mark as integration tests requiring MCP server binary
+pytestmark = [
+    pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp package not installed"),
+    pytest.mark.integration,
+]
 
 
 class TestMCPServer:

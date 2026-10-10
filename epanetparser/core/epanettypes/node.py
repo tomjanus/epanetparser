@@ -1,9 +1,8 @@
 """Node components: junctions, reservoirs and tanks.
 
-A node is the point where water is injected, consumed or stored. The three
-concrete types differ only in which fields EPANET requires of them, so this
-module exposes one class and the concrete type is read from the
-``node_type`` field.
+Each concrete node type is a separate class that inherits from WNTREPANETType.
+This allows WNTR element classes (Junction, Reservoir, Tank) to inherit from
+these classes and gain the validation interface.
 
 Validation rules for nodes live in
 :mod:`epanetparser.core_rules.epanet_core.nodes`, not here.
@@ -15,7 +14,10 @@ from .base import WNTREPANETType
 
 
 class WNTREPANETNode(WNTREPANETType):
-    """A junction, reservoir or tank.
+    """Base class for all node types (junction, reservoir, tank).
+
+    This class exists for backward compatibility. New code should use
+    the concrete subclasses: WNTREPANETJunction, WNTREPANETReservoir, WNTREPANETTank.
 
     Attributes
     ----------
@@ -23,37 +25,24 @@ class WNTREPANETNode(WNTREPANETType):
         The concrete node types EPANET defines.
     component_kind : str
         ``"nodes"``.
-
-    Notes
-    -----
-    A node name that is a non-string scalar is coerced to ``str`` on
-    construction, because JSON producers occasionally emit numeric node
-    names. A missing or empty name is left alone: reporting it is the job of
-    a validation rule, not of parsing.
-
-    Examples
-    --------
-    >>> from epanetparser.core.epanettypes.node import WNTREPANETNode
-    >>> node = WNTREPANETNode({"name": "J1", "node_type": "Junction", "elevation": 10.0})
-    >>> node.type
-    'Junction'
-    >>> node.name
-    'J1'
-    >>> node.validate().is_valid
-    True
     """
 
     node_types: Tuple[str, ...] = ("Junction", "Reservoir", "Tank")
     component_kind: str = "nodes"
 
-    def __init__(self, data: Dict[str, Any]) -> None:
+    def __init__(self, data: Optional[Dict[str, Any]] = None, **kwargs) -> None:
         """Store the node's fields, normalising a non-string name.
 
         Parameters
         ----------
-        data : Dict[str, Any]
+        data : Dict[str, Any], optional
             Node fields, including ``name`` and ``node_type``.
+        **kwargs
+            Additional fields passed as keyword arguments (for WNTR element compatibility).
         """
+        if data is None:
+            data = {}
+        data.update(kwargs)
         name = data.get("name")
         if name is not None and not isinstance(name, str):
             data["name"] = str(name)
@@ -101,3 +90,105 @@ class WNTREPANETNode(WNTREPANETType):
         caller mutating nested lists such as ``coordinates``.
         """
         return copy.deepcopy(self.data)
+
+
+class WNTREPANETJunction(WNTREPANETNode):
+    """A junction node.
+
+    Junctions are points where water is consumed or where links connect.
+    They require an elevation and optionally have a base demand and emitter.
+    """
+
+    component_kind: str = "nodes"
+
+    @property
+    def type(self) -> str:
+        return "Junction"
+
+    @property
+    def elevation(self) -> Optional[float]:
+        return self.data.get("elevation")
+
+    @property
+    def base_demand(self) -> Optional[float]:
+        return self.data.get("base_demand")
+
+    @property
+    def demand_pattern_name(self) -> Optional[str]:
+        return self.data.get("pattern_name")
+
+    @property
+    def demand_category(self) -> Optional[str]:
+        return self.data.get("demand_category")
+
+
+class WNTREPANETReservoir(WNTREPANETNode):
+    """A reservoir node.
+
+    Reservoirs are infinite water sources at a fixed hydraulic head.
+    They require a base_head and optionally have a head pattern.
+    """
+
+    component_kind: str = "nodes"
+
+    @property
+    def type(self) -> str:
+        return "Reservoir"
+
+    @property
+    def elevation(self) -> Optional[float]:
+        return self.data.get("elevation")
+
+    @property
+    def base_head(self) -> Optional[float]:
+        return self.data.get("base_head")
+
+    @property
+    def head_pattern_name(self) -> Optional[str]:
+        return self.data.get("head_pattern_name")
+
+
+class WNTREPANETTank(WNTREPANETNode):
+    """A tank node.
+
+    Tanks are water storage nodes with variable water level.
+    They require elevation, diameter, and level parameters.
+    """
+
+    component_kind: str = "nodes"
+
+    @property
+    def type(self) -> str:
+        return "Tank"
+
+    @property
+    def elevation(self) -> Optional[float]:
+        return self.data.get("elevation")
+
+    @property
+    def diameter(self) -> Optional[float]:
+        return self.data.get("diameter")
+
+    @property
+    def init_level(self) -> Optional[float]:
+        return self.data.get("init_level")
+
+    @property
+    def min_level(self) -> Optional[float]:
+        return self.data.get("min_level")
+
+    @property
+    def max_level(self) -> Optional[float]:
+        return self.data.get("max_level")
+
+    @property
+    def min_vol(self) -> Optional[float]:
+        return self.data.get("min_vol")
+
+    @property
+    def vol_curve_name(self) -> Optional[str]:
+        return self.data.get("vol_curve_name")
+
+    @property
+    def overflow(self) -> Optional[bool]:
+        return self.data.get("overflow")

@@ -316,4 +316,6 @@ class TestComponentClassesCarryNoRules:
         import epanetparser.core.epanettypes.node as node_module
 
         classes = discover_classes(node_module)
-        assert [cls.__name__ for cls in classes] == ["WNTREPANETNode"]
+        # We now have WNTREPANETNode (base) and concrete subclasses
+        class_names = {cls.__name__ for cls in classes}
+        assert class_names == {"WNTREPANETNode", "WNTREPANETJunction", "WNTREPANETReservoir", "WNTREPANETTank"}
