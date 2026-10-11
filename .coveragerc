@@ -1,0 +1,15 @@
+[run]
+source = epanetparser
+omit =
+    epanetparser/core/io/*
+    epanetparser/core/parse.py
+    epanetparser/core/mcp_server.py
+    epanetparser/core/display.py
+    epanetparser/core/plugins_cli.py
+    epanetparser/core/download.py
+    epanetparser/core_rules/epanet_core/*
+
+[report]
+fail_under = 50
+show_missing = true
+precision = 2

@@ -36,6 +36,7 @@ mcp = {version = "^1.0", optional = true}
 
 [tool.poetry.extras]
 agentic = ["mcp"]
+simulation = ["wntr"]
 
 [tool.poetry.scripts]
 epanetparser = "epanetparser.core.parse:run"
@@ -58,7 +59,8 @@ pytest-mock = "^3.14"
 
 [tool.poetry.group.examples.dependencies]
 nbformat = "^5.9"
-nbconvert = "^7.16"
+
+
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -72,9 +74,6 @@ addopts = [
 ]
 xfail_strict = true
 testpaths = ["tests"]
-markers = [
-    "asyncio: mark test as async",
-]
 
 
 [mypy]

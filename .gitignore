@@ -231,3 +231,8 @@ PROMPT.md
 CONTEXT.md
 opencode.json
 opencode.jsonc
+
+# Temporary EPANET generated files
+temp.bin
+temp.inp
+temp.rpt
