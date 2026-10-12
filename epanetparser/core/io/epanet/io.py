@@ -328,6 +328,8 @@ class InpFile:
 
             ### OPTIONS
             self._read_options()
+            if self.flow_units is None:
+                self.flow_units = FlowUnits.GPM
 
             ### TIMES
             self._read_times()
@@ -1897,7 +1899,7 @@ class InpFile:
         if report.summary.upper() != 'YES':
             f.write('SUMMARY    {}\n'.format(report.summary).encode(sys_default_enc))
         if report.pagesize is not None:
-            f.write('PAGE       {}\n'.format(report.pagesize).encode(sys_default_enc))
+            f.write('PAGE       {}\n'.format(int(report.pagesize)).encode(sys_default_enc))
         if report.report_filename is not None:
             f.write('FILE       {}\n'.format(report.report_filename).encode(sys_default_enc))
         if report.energy.upper() != 'NO':

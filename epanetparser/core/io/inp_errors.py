@@ -6,7 +6,6 @@ error codes, and actionable suggestions for AI agents and users.
 """
 from __future__ import annotations
 from typing import List, Optional
-from dataclasses import dataclass, field
 
 
 class InpParseError(Exception):

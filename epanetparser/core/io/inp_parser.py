@@ -19,15 +19,11 @@ from .inp_errors import (
     InpParseError,
     InpSyntaxError,
     InpSemanticError,
-    create_inp_error,
 )
 from .epanet.util import (
     FlowUnits,
     HydParam,
     MassUnits,
-    MixType,
-    QualParam,
-    from_si,
     to_si,
 )
 
@@ -556,9 +552,7 @@ class InpParser:
                 hour += 12
             return hour * 3600
         
-        from typing import Callable, Any, Tuple
-        
-        from typing import Callable, Any, Tuple, Union, List, Pattern
+        from typing import Callable, List, Pattern, Tuple
         
         TimeConverter = Callable[..., int]
         
@@ -601,7 +595,6 @@ class InpParser:
 
     def _parse_curves(self) -> None:
         """Parse CURVES section."""
-        curve_name = None
         for line_num, line in self.sections["[CURVES]"]:
             values, _ = self._split_line(line)
             if not values:
@@ -1461,6 +1454,7 @@ def read_inp_to_dict(filepath: Union[str, Path]) -> Dict[str, Any]:
     """Parse an EPANET INP file into a WNTR-compatible dictionary.
 
     This is the main entry point for the standalone INP parser.
+    Uses the vendored WNTR parsing logic for accurate parsing and unit conversions.
 
     Parameters
     ----------
@@ -1491,5 +1485,75 @@ def read_inp_to_dict(filepath: Union[str, Path]) -> Dict[str, Any]:
     dict_keys(['version', 'comment', 'name', 'references', 'options',
                'curves', 'patterns', 'nodes', 'links', 'sources', 'controls'])
     """
-    parser = InpParser(filepath)
-    return parser.parse()
+    from .epanet.io import InpFile, EpanetException, ENSyntaxError
+    import re
+    
+    try:
+        inp_file = InpFile()
+        wn = inp_file.read(str(filepath))
+        return inp_file.to_dict(wn)
+    except FileNotFoundError as e:
+        raise InpParseError(
+            f"Input file not found: {filepath}",
+            error_code="200",
+            suggestions=["Check the file path", "Ensure the file exists"],
+        ) from e
+    except ENSyntaxError as e:
+        # Convert WNTR syntax errors to our structured format
+        # ENSyntaxError message contains line number and section info
+        error_msg = str(e)
+        line_number = None
+        section = None
+        error_code = "201"
+        
+        # Extract line number from error message: "at line 4:"
+        line_match = re.search(r'at line (\d+)', error_msg)
+        if line_match:
+            line_number = int(line_match.group(1))
+        
+        # Extract section from error message: "[INVALID_SECTION]"
+        section_match = re.search(r'\[([A-Z_]+)\]', error_msg)
+        if section_match:
+            section = f"[{section_match.group(1)}]"
+        
+        # Extract error code from message: "Error 201"
+        code_match = re.search(r'Error (\d+)', error_msg)
+        if code_match:
+            error_code = code_match.group(1)
+        
+        raise InpSyntaxError(
+            error_msg,
+            line_number=line_number,
+            section=section,
+            error_code=error_code,
+        ) from e
+    except EpanetException as e:
+        # Convert other WNTR errors to semantic errors
+        raise InpSemanticError(
+            str(e),
+            error_code=str(getattr(e, 'error_code', '200')),
+        ) from e
+    except ValueError as e:
+        # Numeric conversion errors (invalid float/int) -> syntax error
+        raise InpSyntaxError(
+            str(e),
+            line_number=None,
+            section=None,
+            error_code="202",
+            suggestions=["Check that all numeric values are valid numbers"],
+        ) from e
+    except KeyError as e:
+        # Undefined references (curves, patterns, etc.) -> semantic error
+        raise InpSemanticError(
+            f"Undefined reference: {e}",
+            line_number=None,
+            section=None,
+            error_code="203",
+            suggestions=["Define the referenced object before using it"],
+        ) from e
+    except Exception as e:
+        # Catch-all for other parsing errors
+        raise InpParseError(
+            f"Failed to parse INP file: {e}",
+            error_code="200",
+        ) from e

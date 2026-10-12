@@ -57,8 +57,9 @@ from epanetparser.core.io.network.model import (
     CurveRegistry,
     SourceRegistry,
 )
+from epanetparser.core.io import read_inp_to_dict
 from epanetparser.core.io.epanet.io import InpFile
-from epanetparser.core.io.network.io import to_dict, from_dict
+from epanetparser.core.io.network.io import from_dict
 
 log = logging.getLogger(__name__)
 
@@ -283,10 +284,9 @@ class WNTREPANETNetwork:
         path = pathlib.Path(filename)
         try:
             if path.suffix.lower() == ".inp":
-                # Parse INP directly using core.io
-                inp_file = InpFile()
-                wn_model = inp_file.read(path.as_posix())
-                network = cls._from_wntr_model(wn_model)
+                # Parse INP using standalone parser
+                wn_dict = read_inp_to_dict(path.as_posix())
+                network = cls.from_dict(wn_dict)
                 return network, None, None
             elif path.suffix.lower() == ".json":
                 json_src = path.read_text(encoding="utf-8")
@@ -305,13 +305,6 @@ class WNTREPANETNetwork:
             if raise_on_parser_error:
                 raise WNTREPANETParserException(message) from None
             return None, {"network": [WNTREPANETParserException(message)]}, None
-
-    @classmethod
-    def _from_wntr_model(cls, wn_model) -> "WNTREPANETNetwork":
-        """Create a WNTREPANETNetwork from a WaterNetworkModel."""
-        # Convert to dict and then use from_dict
-        wn_dict = to_dict(wn_model)
-        return cls.from_dict(wn_dict)
 
     @classmethod
     def from_dict(cls, wn_dict: Dict[str, Any]) -> "WNTREPANETNetwork":

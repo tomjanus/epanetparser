@@ -11,8 +11,8 @@ without requiring the full WNTR package.
 from pathlib import Path
 import json
 
-from epanetparser.core.io.epanet.io import InpFile
-from epanetparser.core.io.network.io import to_dict, from_dict, write_inpfile
+from epanetparser.core.io import read_inp_to_dict
+from epanetparser.core.io.network.io import from_dict, write_inpfile
 
 
 class WNTRINPJSONConverter:
@@ -47,9 +47,8 @@ class WNTRINPJSONConverter:
         inp_path = Path(inp_path)
         if inp_path.suffix.lower() != ".inp":
             raise ValueError("Input must be a .inp file")
-        inp_file = InpFile()
-        wn = inp_file.read(str(inp_path))
-        return json.dumps(to_dict(wn), indent=indent, ensure_ascii=False)
+        wn_dict = read_inp_to_dict(str(inp_path))
+        return json.dumps(wn_dict, indent=indent, ensure_ascii=False)
     
     
     @staticmethod
