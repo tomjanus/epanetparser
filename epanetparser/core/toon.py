@@ -223,7 +223,8 @@ class TOONEncoder:
                 fields = [
                     "code", "message", "severity", "rule_id", "ruleset_key",
                     "component_type", "component_name", "attribute",
-                    "component_data", "context"
+                    "component_data", "context", "category", "fix_suggestion",
+                    "validation_layer", "simulation_metadata"
                 ]
             else:
                 fields = list(arr[0].keys())
@@ -316,6 +317,8 @@ def encode_validation_report(report_dict: Dict[str, Any]) -> str:
     ordered = {}
     if "is_valid" in report_dict:
         ordered["is_valid"] = report_dict["is_valid"]
+    if "schema_version" in report_dict:
+        ordered["schema_version"] = report_dict["schema_version"]
     if "counts" in report_dict:
         ordered["counts"] = report_dict["counts"]
     if "issues" in report_dict:

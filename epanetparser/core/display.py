@@ -269,6 +269,8 @@ def _print_finding_details(finding: Any, use_emoji: bool, verbose: bool = False)
     details.append(f"  Rule: {finding.rule_id}")
     if finding.ruleset_key:
         details.append(f"  Ruleset: {finding.ruleset_key}")
+    if finding.validation_layer and finding.validation_layer != "static":
+        details.append(f"  Validation Layer: {finding.validation_layer}")
     if finding.attribute:
         details.append(f"  Attribute: {finding.attribute}")
     if finding.category:
@@ -286,6 +288,11 @@ def _print_finding_details(finding: Any, use_emoji: bool, verbose: bool = False)
         fields = finding.context["failing_fields"]
         if fields:
             details.append(f"  Failing fields: {', '.join(fields)}")
+    
+    # Print simulation_metadata if present
+    if finding.simulation_metadata:
+        for key, value in sorted(finding.simulation_metadata.items()):
+            details.append(f"  Simulation: {key}={value}")
     
     # Print component_data excerpt if available (for network elements)
     if finding.component_data and finding.component_type != "network":

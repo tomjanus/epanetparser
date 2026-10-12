@@ -160,6 +160,8 @@ class ValidationIssue:
     context: Dict[str, Any] = field(default_factory=dict)
     category: str = ""
     fix_suggestion: str = ""
+    validation_layer: str = "static"
+    simulation_metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_error(self) -> bool:
@@ -189,7 +191,8 @@ class ValidationIssue:
             Mapping with the issue ``code``, ``message``, ``severity``,
             ``rule_id``, ``ruleset_key``, ``component_type``,
             ``component_name``, ``attribute``, ``component_data``, ``context``,
-            ``category``, and ``fix_suggestion``.
+            ``category``, ``fix_suggestion``, ``validation_layer``, and
+            ``simulation_metadata``.
 
         Examples
         --------
@@ -209,6 +212,8 @@ class ValidationIssue:
             "context": dict(self.context),
             "category": self.category,
             "fix_suggestion": self.fix_suggestion,
+            "validation_layer": self.validation_layer,
+            "simulation_metadata": dict(self.simulation_metadata),
         }
 
 
@@ -219,6 +224,8 @@ class ValidationReport:
     ----------
     issues : List[ValidationIssue]
         Issues in the order they were produced by the engine.
+    schema_version : str
+        Version of the validation report schema. Defaults to "2.0".
 
     Notes
     -----
@@ -240,7 +247,11 @@ class ValidationReport:
     False
     """
 
-    def __init__(self, issues: Optional[Iterable[ValidationIssue]] = None) -> None:
+    def __init__(
+        self,
+        issues: Optional[Iterable[ValidationIssue]] = None,
+        schema_version: str = "2.0",
+    ) -> None:
         """Create a report from an iterable of issues.
 
         Parameters
@@ -248,8 +259,11 @@ class ValidationReport:
         issues : Optional[Iterable[ValidationIssue]]
             Issues to seed the report with. A new list is created, so the
             caller's iterable is never aliased.
+        schema_version : str
+            Version of the validation report schema. Defaults to "2.0".
         """
         self.issues: List[ValidationIssue] = list(issues) if issues else []
+        self.schema_version: str = schema_version
 
     def __iter__(self) -> Iterator[ValidationIssue]:
         """Iterate over the issues in insertion order."""
@@ -417,7 +431,7 @@ class ValidationReport:
         Returns
         -------
         Dict[str, Any]
-            Mapping with ``is_valid``, the per-severity counts under
+            Mapping with ``is_valid``, ``schema_version``, the per-severity counts under
             ``counts`` and the full issue list under ``issues``. Each issue is
             serialised with :meth:`ValidationIssue.as_dict`.
 
@@ -428,6 +442,7 @@ class ValidationReport:
         """
         return {
             "is_valid": self.is_valid,
+            "schema_version": self.schema_version,
             "counts": {
                 Severity.ERROR.name: len(self.errors),
                 Severity.WARNING.name: len(self.warnings),

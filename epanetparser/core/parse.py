@@ -121,6 +121,7 @@ from epanetparser.core.validation import (
     RuleSetSelectionError,
     ValidationContext,
     ValidationReport,
+    Validator,
 )
 
 RichHelpFormatter.usage_markup = True
@@ -231,6 +232,27 @@ def configure_args(args: List[str]) -> argparse.Namespace:
             "Raise a structural parsing problem as an exception instead of "
             "reporting it"
         )
+    )
+    # Simulation validation options
+    validation.add_argument("--simulate",
+        action="store_true",
+        default=False,
+        help="Run hydraulic simulation and validate simulation results"
+    )
+    validation.add_argument("--simulation-ruleset",
+        metavar="<ruleset>",
+        action="append",
+        default=None,
+        dest="simulation_rulesets",
+        help=(
+            "Add a simulation ruleset for validating hydraulic results. "
+            "May be given more than once, e.g. --simulation-ruleset hydraulic"
+        )
+    )
+    validation.add_argument("--simulation-only",
+        action="store_true",
+        default=False,
+        help="Only run simulation validation (skip static validation)"
     )
 
     # Display options for validate command
@@ -422,6 +444,29 @@ def handle_validate(args: argparse.Namespace) -> None:
         rprint(f"[red]Error:[/red] {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # Simulation validation
+    if args.simulate or args.simulation_only:
+        if not args.simulation_only:
+            # Static validation already done, now run simulation
+            pass
+        
+        # Build simulation context with simulation rulesets
+        sim_context = _build_simulation_context(args.simulation_rulesets)
+        
+        try:
+            # Run hydraulic simulation
+            import wntr
+            wntr_model = network.to_wntr()
+            simulator = wntr.sim.EpanetSimulator(wntr_model)
+            simulation_results = simulator.run_sim()
+            
+            # Run simulation validation
+            validator = Validator.from_context(sim_context)
+            report = validator.validate_simulation(simulation_results, report)
+        except Exception as exc:
+            rprint(f"[red]Error:[/red] Simulation validation failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
     if args.ignore_warnings:
         report = ValidationReport(
             [issue for issue in report if not issue.is_warning]
@@ -467,6 +512,34 @@ def _build_context(rulesets) -> ValidationContext:
         if key not in available:
             rprint(
                 f"[red]Error:[/red] No ruleset with key '{key}'. "
+                f"Available: {', '.join(available) or '<none>'}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    return context
+
+
+def _build_simulation_context(simulation_rulesets) -> ValidationContext:
+    """Build a validation context for simulation validation.
+
+    Args:
+        simulation_rulesets: Simulation rule set keys from the command line, or None.
+
+    Returns:
+        ValidationContext: The core ruleset plus the requested simulation custom ones.
+
+    Raises:
+        SystemExit: Exits with code 1 if a key is not a discovered ruleset.
+    """
+    # For simulation validation, we still need the core ruleset for the network
+    # but we also include the simulation rulesets as custom
+    context = ValidationContext(custom=tuple(simulation_rulesets or ()))
+    registry = context.registry
+    available = registry.keys()
+    for key in context.custom:
+        if key not in available:
+            rprint(
+                f"[red]Error:[/red] No simulation ruleset with key '{key}'. "
                 f"Available: {', '.join(available) or '<none>'}",
                 file=sys.stderr,
             )

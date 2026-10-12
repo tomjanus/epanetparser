@@ -303,8 +303,8 @@ class TestCacheInvalidation:
     def test_caches_can_be_cleared_and_refilled(self):
         """After clearing, discovery runs again and finds the same rule sets."""
         try:
-            assert RuleSetRegistry().keys() == ["epanet_core", "milp"]
+            assert RuleSetRegistry().keys() == ["epanet_core", "hydraulic", "milp"]
             clear_caches()
-            assert RuleSetRegistry().keys() == ["epanet_core", "milp"]
+            assert RuleSetRegistry().keys() == ["epanet_core", "hydraulic", "milp"]
         finally:
             clear_caches()

@@ -83,11 +83,13 @@ from epanetparser.core.validation.results import Severity, ValidationIssue, Vali
 from epanetparser.core.validation.rules import (
     RuleExecutionError,
     RuleSpec,
+    SimulationRuleSpec,
     RuleViolation,
     collect_rules,
     defined,
     network_rule,
     rule,
+    simulation_rule,
 )
 from epanetparser.core.validation.decorators import (
     DescribedCallable,
@@ -118,6 +120,7 @@ __all__ = [
     "RuleSetRegistry",
     "RuleSetSelectionError",
     "RuleSpec",
+    "SimulationRuleSpec",
     "RuleViolation",
     "Severity",
     "ValidationContext",
@@ -142,6 +145,7 @@ __all__ = [
     "match",
     "network_rule",
     "rule",
+    "simulation_rule",
     "validate",
     "described",
     "MethodInfo",

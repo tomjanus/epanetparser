@@ -12,6 +12,10 @@ Network-level rules are declared with :func:`network_rule` and take the
 network instead of a component. The engine catches the ``AssertionError`` and
 turns it into a :class:`~epanetparser.core.validation.results.ValidationIssue`.
 
+Simulation rules are declared with :func:`simulation_rule` and take the
+simulation results object. They run after a hydraulic simulation and validate
+outputs such as pressure, flow, velocity, and water quality.
+
 The :func:`~epanetparser.core.decorators.match` and
 :func:`~epanetparser.core.decorators.described` decorators compose with
 :func:`rule`: ``match`` narrows a component rule to a concrete component type
@@ -24,6 +28,8 @@ rule
     Declare a component-level rule.
 network_rule
     Declare a network-level rule.
+simulation_rule
+    Declare a simulation validation rule.
 collect_rules
     Collect every rule declared in a module.
 default_code
@@ -33,12 +39,15 @@ Classes
 -------
 RuleSpec
     A rule function together with the metadata needed to report its failures.
+SimulationRuleSpec
+    A simulation rule function together with the metadata needed to report its
+    failures.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Any, Callable, Dict, List, Optional, Tuple, get_args, get_origin
+from typing import Any, Callable, Dict, List, Optional, Tuple, Sequence, get_args, get_origin
 
 from epanetparser.core.validation.decorators import (
     extract_classification,
@@ -50,8 +59,10 @@ from epanetparser.core.validation.results import Severity
 __all__ = [
     "RULE_ATTRIBUTE",
     "NETWORK_RULE_ATTRIBUTE",
+    "SIMULATION_RULE_ATTRIBUTE",
     "RuleExecutionError",
     "RuleSpec",
+    "SimulationRuleSpec",
     "RuleViolation",
     "collect_rules",
     "default_code",
@@ -60,6 +71,7 @@ __all__ = [
     "extract_fix_suggestion",
     "network_rule",
     "rule",
+    "simulation_rule",
 ]
 
 
@@ -454,6 +466,178 @@ def network_rule(
     return decorator
 
 
+# Attribute under which :func:`simulation_rule` stores the resulting
+# :class:`SimulationRuleSpec`.
+SIMULATION_RULE_ATTRIBUTE = "__epanetparser_simulation_rule__"
+
+
+@dataclass(frozen=True)
+class SimulationRuleSpec:
+    """A simulation rule function and the metadata used to report its failures.
+
+    Simulation rules differ from static rules in that they receive the
+    hydraulic simulation results (a WNTR simulation output object) rather than
+    the network model itself. They validate post-simulation outputs such as
+    pressure, flow, velocity, and water quality results.
+
+    Attributes
+    ----------
+    rule_id : str
+        Name of the rule function, used as the stable ``rule_id`` of every
+        issue the rule produces.
+    func : Callable[[Any], None]
+        The rule function. Called with a single positional argument: the
+        simulation results object.
+    severity : Severity
+        Severity assigned to every issue produced by this rule.
+    code : str
+        Stable issue code. Defaults to :func:`default_code` of ``rule_id``.
+    attribute : Optional[str]
+        Field the rule is concerned with, when meaningful (e.g., "pressure",
+        "flow", "velocity").
+    description : str
+        Human-readable description, from the function docstring.
+    category : str
+        Validation category (e.g., "Hydraulic", "Quality", "Performance").
+        Extracted from docstring ``classification :`` field.
+    fix_suggestion : str
+        Imperative fix suggestion for AI agents. Extracted from docstring
+        ``fix :`` field.
+    required_outputs : Tuple[str, ...]
+        Names of the simulation output fields this rule requires. The engine
+        will skip the rule if the simulation did not produce these outputs.
+
+    Notes
+    -----
+    Instances are frozen. The function itself carries the description set by
+    ``@described``, so :attr:`description` is resolved once at scan time.
+    """
+
+    rule_id: str
+    func: Callable[[Any], None]
+    severity: Severity = Severity.ERROR
+    code: str = ""
+    attribute: Optional[str] = None
+    description: str = ""
+    category: str = ""
+    fix_suggestion: str = ""
+    required_outputs: Tuple[str, ...] = ()
+    context: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Fill in the defaults that depend on the wrapped function."""
+        if not self.code:
+            object.__setattr__(self, "code", default_code(self.rule_id))
+        if not self.description:
+            object.__setattr__(
+                self,
+                "description",
+                extract_quick_description(self.func) or self.rule_id,
+            )
+        if not self.category:
+            object.__setattr__(
+                self,
+                "category",
+                extract_classification(self.func),
+            )
+        if not self.fix_suggestion:
+            object.__setattr__(
+                self,
+                "fix_suggestion",
+                extract_fix_suggestion(self.func),
+            )
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.rule_id}, simulation, {self.severity})"
+
+    @property
+    def is_error(self) -> bool:
+        """True if this rule reports :attr:`Severity.ERROR` failures."""
+        return self.severity is Severity.ERROR
+
+    @property
+    def is_warning(self) -> bool:
+        """True if this rule reports :attr:`Severity.WARNING` failures."""
+        return self.severity is Severity.WARNING
+
+    def issue_context(self) -> Dict[str, Any]:
+        """Return the static contextual metadata carried by this rule."""
+        context = dict(self.context)
+        context["required_outputs"] = list(self.required_outputs)
+        return context
+
+
+def simulation_rule(
+    *,
+    severity: Any = Severity.ERROR,
+    code: Optional[str] = None,
+    attribute: Optional[str] = None,
+    required_outputs: Optional[Sequence[str]] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Declare a simulation validation rule.
+
+    Simulation rules run after a hydraulic simulation and validate the
+    simulation results (pressures, flows, velocities, quality, etc.). The
+    decorated function takes a single positional argument: the WNTR
+    simulation results object.
+
+    Parameters
+    ----------
+    severity : Any
+        Severity for the rule's failures. ``Severity.ERROR`` by default.
+    code : Optional[str]
+        Stable issue code. Defaults to :func:`default_code` of the function
+        name. Pass a code explicitly when the generated one is unsuitable.
+    attribute : Optional[str]
+        Field the rule is concerned with (e.g., "pressure", "flow",
+        "velocity"), recorded on every issue the rule produces.
+    required_outputs : Optional[Sequence[str]]
+        Names of the simulation output fields this rule requires (e.g.,
+        "node.pressure", "link.flowrate"). The engine will skip the rule if
+        the simulation did not produce these outputs.
+
+    Returns
+    -------
+    Callable[[Callable[..., Any]], Callable[..., Any]]
+        Decorator returning the function unchanged, with a
+        :class:`SimulationRuleSpec` attached for module scanning.
+
+    Notes
+    -----
+    Combine with ``@described`` to control the description.
+    Simulation rules are collected separately from static rules and are only
+    executed when simulation validation is requested via the CLI
+    (``--simulate`` flag) or programmatically.
+
+    Examples
+    --------
+    >>> @simulation_rule(attribute="pressure", required_outputs=["node.pressure"])
+    ... def rule_minimum_pressure(results) -> None:
+    ...     '''Minimum pressure must be above 20 psi at all junctions.'''
+    ...     pressures = results.node['pressure'].min()
+    ...     assert pressures >= 20, f"Minimum pressure {pressures:.1f} psi below 20 psi"
+    >>> spec = rule_minimum_pressure.__epanetparser_simulation_rule__
+    >>> spec.code
+    'E_MINIMUM_PRESSURE'
+    >>> spec.required_outputs
+    ('node.pressure',)
+    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        spec = SimulationRuleSpec(
+            rule_id=func.__name__,
+            func=func,
+            severity=Severity(severity),
+            code=code or "",
+            attribute=attribute,
+            description=getattr(func, "description", ""),
+            required_outputs=tuple(required_outputs or ()),
+        )
+        setattr(func, SIMULATION_RULE_ATTRIBUTE, spec)
+        return func
+
+    return decorator
+
+
 class RuleExecutionError(RuntimeError):
     """Raised when a rule fails for a reason other than a failed assertion.
 
@@ -562,16 +746,19 @@ def _create_implicit_spec(func: Callable[..., Any]) -> RuleSpec:
     return spec
 
 
-def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
+def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec], List[SimulationRuleSpec]]:
     """Collect the rules declared in a module.
 
-    Rules can be declared in two ways:
+    Rules can be declared in three ways:
     
     1. Explicit: using ``@rule`` or ``@network_rule`` decorators (backward compatible)
     2. Implicit: functions named ``rule_*`` (error) or ``warn_*`` (warning) 
        are auto-discovered. Component type inferred from type annotation.
+    3. Simulation: using ``@simulation_rule`` decorator for post-simulation
+       validation rules.
     
-    Network-level rules must use ``@network_rule`` explicitly.
+    Network-level rules must use ``@network_rule`` explicitly. Simulation rules
+    must use ``@simulation_rule`` explicitly.
 
     Parameters
     ----------
@@ -581,9 +768,9 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
 
     Returns
     -------
-    Tuple[List[RuleSpec], List[RuleSpec]]
-        A pair ``(component_rules, network_rules)``, each sorted by
-        ``rule_id`` so that report ordering is deterministic.
+    Tuple[List[RuleSpec], List[RuleSpec], List[SimulationRuleSpec]]
+        A triple ``(component_rules, network_rules, simulation_rules)``, each
+        sorted by ``rule_id`` so that report ordering is deterministic.
 
     Raises
     ------
@@ -595,12 +782,13 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
     --------
     >>> from types import ModuleType
     >>> import epanetparser.core_rules.epanet_core.nodes as nodes
-    >>> component_rules, network_rules = collect_rules(nodes)
+    >>> component_rules, network_rules, simulation_rules = collect_rules(nodes)
     >>> len(network_rules)
     0
     """
     component_rules: List[RuleSpec] = []
     network_rules: List[RuleSpec] = []
+    simulation_rules: List[SimulationRuleSpec] = []
     for name, value in sorted(vars(module).items()):
         if not callable(value):
             continue
@@ -621,6 +809,13 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
                 network_rules.append(spec)
             else:
                 component_rules.append(spec)
+        elif getattr(value, SIMULATION_RULE_ATTRIBUTE, None) is not None:
+            # Simulation rule found
+            sim_spec = getattr(value, SIMULATION_RULE_ATTRIBUTE)
+            if getattr(sim_spec.func, "__module__", module.__name__) != module.__name__:
+                # Re-exported from another module; that module collects it.
+                continue
+            simulation_rules.append(sim_spec)
         elif _is_implicit_rule(value):
             # Implicit discovery: rule_* or warn_* function
             if getattr(value, "__module__", module.__name__) != module.__name__:
@@ -634,18 +829,20 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec]]:
     
     _reject_duplicates(component_rules, "component", module)
     _reject_duplicates(network_rules, "network", module)
+    _reject_duplicates(simulation_rules, "simulation", module)
     component_rules.sort(key=lambda spec: spec.rule_id)
     network_rules.sort(key=lambda spec: spec.rule_id)
-    return component_rules, network_rules
+    simulation_rules.sort(key=lambda spec: spec.rule_id)
+    return component_rules, network_rules, simulation_rules
 
 
 def _reject_duplicates(
-    specs: List[RuleSpec],
+    specs: List[Any],
     kind: str,
     module: ModuleType,
 ) -> None:
     """Raise if ``specs`` contains two rules with the same ``rule_id``."""
-    seen: Dict[str, RuleSpec] = {}
+    seen: Dict[str, Any] = {}
     for spec in specs:
         if spec.rule_id in seen:
             raise RuleExecutionError(

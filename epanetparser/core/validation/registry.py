@@ -50,7 +50,7 @@ from epanetparser.core.validation.discovery import (
     entry_point_modules,
     ruleset_rule_modules,
 )
-from epanetparser.core.validation.rules import RuleSpec, collect_rules
+from epanetparser.core.validation.rules import RuleSpec, SimulationRuleSpec, collect_rules
 
 logger = get_logger(__name__, level="WARNING")
 
@@ -98,6 +98,8 @@ class RuleSet:
         Component-level rules, ordered by ``rule_id``.
     network_rules : Tuple[RuleSpec, ...]
         Network-level rules, ordered by ``rule_id``.
+    simulation_rules : Tuple[SimulationRuleSpec, ...]
+        Simulation validation rules, ordered by ``rule_id``.
 
     Notes
     -----
@@ -122,19 +124,22 @@ class RuleSet:
     module_path: str
     component_rules: Tuple[RuleSpec, ...] = field(default=())
     network_rules: Tuple[RuleSpec, ...] = field(default=())
+    simulation_rules: Tuple[SimulationRuleSpec, ...] = field(default=())
 
     def __str__(self) -> str:
         kind = "core" if self.is_core else "custom"
+        sim_count = len(self.simulation_rules)
         return (
             f"{self.key} ({kind}): {self.name} v{self.version} "
             f"[{len(self.component_rules)} component, "
-            f"{len(self.network_rules)} network rules]"
+            f"{len(self.network_rules)} network, "
+            f"{sim_count} simulation rules]"
         )
 
     @property
     def rule_count(self) -> int:
         """Total number of rules in the rule set."""
-        return len(self.component_rules) + len(self.network_rules)
+        return len(self.component_rules) + len(self.network_rules) + len(self.simulation_rules)
 
     @classmethod
     def from_module(cls, module: ModuleType) -> "RuleSet":
@@ -167,12 +172,15 @@ class RuleSet:
             )
         component_rules: List[RuleSpec] = []
         network_rules: List[RuleSpec] = []
+        simulation_rules: List[SimulationRuleSpec] = []
         for rule_module in ruleset_rule_modules(module):
-            found_components, found_network = collect_rules(rule_module)
+            found_components, found_network, found_simulation = collect_rules(rule_module)
             component_rules.extend(found_components)
             network_rules.extend(found_network)
+            simulation_rules.extend(found_simulation)
         component_rules.sort(key=lambda spec: (spec.component_type or "", spec.rule_id))
         network_rules.sort(key=lambda spec: spec.rule_id)
+        simulation_rules.sort(key=lambda spec: spec.rule_id)
         return cls(
             key=module.__key__,
             name=module.__ruleset_name__,
@@ -182,6 +190,7 @@ class RuleSet:
             module_path=module.__name__,
             component_rules=tuple(component_rules),
             network_rules=tuple(network_rules),
+            simulation_rules=tuple(simulation_rules),
         )
 
     def as_dict(self) -> Dict[str, Any]:
@@ -191,7 +200,7 @@ class RuleSet:
         -------
         Dict[str, Any]
             Metadata and the ``rule_id`` of every rule, grouped into
-            ``component_rules`` and ``network_rules``.
+            ``component_rules``, ``network_rules``, and ``simulation_rules``.
         """
         return {
             "key": self.key,
@@ -221,6 +230,17 @@ class RuleSet:
                     "attribute": spec.attribute,
                 }
                 for spec in self.network_rules
+            ],
+            "simulation_rules": [
+                {
+                    "rule_id": spec.rule_id,
+                    "code": spec.code,
+                    "severity": spec.severity.name,
+                    "description": spec.description,
+                    "attribute": spec.attribute,
+                    "required_outputs": list(spec.required_outputs),
+                }
+                for spec in self.simulation_rules
             ],
         }
 

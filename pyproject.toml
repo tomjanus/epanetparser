@@ -31,6 +31,8 @@ platformdirs = "^4.9.2"
 pyyaml = "^6.0"
 # Imported directly by epanetparser.core.download.
 requests = "^2.32"
+# Required for simulation validation layer (Pandera schemas)
+pandera = "^0.34.1"
 # Optional: MCP server for agentic AI integration
 mcp = {version = "^1.0", optional = true}
 

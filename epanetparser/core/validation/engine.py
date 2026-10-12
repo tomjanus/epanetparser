@@ -48,6 +48,7 @@ from epanetparser.core.validation.rules import (
     RuleExecutionError,
     RuleSpec,
     RuleViolation,
+    SimulationRuleSpec,
 )
 
 logger = get_logger(__name__, level="WARNING")
@@ -470,6 +471,21 @@ class Validator:
             )
         return cls(resolved.registry.resolve(resolved))
 
+    def simulation_rules(self) -> List[Tuple[RuleSet, SimulationRuleSpec]]:
+        """Return all simulation rules from selected rule sets, in run order.
+
+        Returns
+        -------
+        List[Tuple[RuleSet, SimulationRuleSpec]]
+            Pairs of owning rule set and simulation rule, flattened over the
+            selected rule sets in order.
+        """
+        applicable: List[Tuple[RuleSet, SimulationRuleSpec]] = []
+        for ruleset in self.rulesets:
+            for spec in getattr(ruleset, "simulation_rules", ()):
+                applicable.append((ruleset, spec))
+        return applicable
+
     def rules_for(self, component: Any) -> List[Tuple[RuleSet, RuleSpec]]:
         """Return the rules that apply to a component, in run order.
 
@@ -510,6 +526,115 @@ class Validator:
         if _is_network(target):
             return self.validate_network(target, index=index)
         return self.validate_component(target)
+
+    def validate_simulation(
+        self,
+        simulation_results: Any,
+        report: Optional[ValidationReport] = None,
+    ) -> ValidationReport:
+        """Run simulation validation rules against simulation results.
+
+        Parameters
+        ----------
+        simulation_results : Any
+            The WNTR simulation results object (from ``wntr.run_sim()``).
+        report : Optional[ValidationReport]
+            An existing report to extend with simulation issues. If None,
+            a new report is created.
+
+        Returns
+        -------
+        ValidationReport
+            The report extended with simulation validation issues.
+        """
+        if report is None:
+            report = ValidationReport()
+
+        # Check what outputs are available in the simulation results
+        available_outputs = self._get_available_outputs(simulation_results)
+
+        for ruleset, spec in self.simulation_rules():
+            # Skip rules that require outputs not available in the simulation
+            if spec.required_outputs and not all(
+                out in available_outputs for out in spec.required_outputs
+            ):
+                logger.debug(
+                    "Skipping simulation rule %s: required outputs %s not available",
+                    spec.rule_id,
+                    spec.required_outputs,
+                )
+                continue
+
+            self._run_simulation_rule(spec, simulation_results, ruleset, report)
+
+        return report
+
+    def _get_available_outputs(self, simulation_results: Any) -> set:
+        """Extract the names of available outputs from simulation results.
+
+        Parameters
+        ----------
+        simulation_results : Any
+            The WNTR simulation results object.
+
+        Returns
+        -------
+        set
+            Set of output names like "node.pressure", "link.flowrate", etc.
+        """
+        available = set()
+        # Check node results (WNTR returns dict of DataFrames: {output_name: DataFrame})
+        if hasattr(simulation_results, "node"):
+            node_results = getattr(simulation_results, "node", {})
+            if isinstance(node_results, dict):
+                for key in node_results.keys():
+                    available.add(f"node.{key}")
+        # Check link results
+        if hasattr(simulation_results, "link"):
+            link_results = getattr(simulation_results, "link", {})
+            if isinstance(link_results, dict):
+                for key in link_results.keys():
+                    available.add(f"link.{key}")
+        return available
+
+    def _run_simulation_rule(
+        self,
+        spec: SimulationRuleSpec,
+        simulation_results: Any,
+        ruleset: RuleSet,
+        report: ValidationReport,
+    ) -> None:
+        """Execute one simulation rule and record its outcome in ``report``."""
+        try:
+            spec.func(simulation_results)
+        except AssertionError as err:
+            context = Validator._issue_context(spec, ruleset, simulation_results, {})
+            context["validation_layer"] = "simulation"
+
+            report.add(
+                ValidationIssue(
+                    code=spec.code,
+                    message=str(err) or spec.description,
+                    severity=spec.severity,
+                    rule_id=spec.rule_id,
+                    ruleset_key=ruleset.key,
+                    component_type="simulation",
+                    component_name=None,
+                    attribute=spec.attribute,
+                    component_data={},
+                    context=context,
+                    category=spec.category,
+                    fix_suggestion=spec.fix_suggestion,
+                    validation_layer="simulation",
+                    simulation_metadata={
+                        "required_outputs": list(spec.required_outputs),
+                    },
+                )
+            )
+        except Exception as err:
+            raise RuleExecutionError(
+                f"Simulation rule '{spec.rule_id}' from rule set '{ruleset.key}' failed: {err}"
+            ) from err
 
     def validate_component(self, component: Any) -> ValidationReport:
         """Run the component-level rules against a single component.
