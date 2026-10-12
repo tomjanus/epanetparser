@@ -1,7 +1,8 @@
 [run]
 source = epanetparser
 omit =
-    epanetparser/core/io/*
+    epanetparser/core/io/epanet/*
+    epanetparser/core/io/network/*
     epanetparser/core/parse.py
     epanetparser/core/mcp_server.py
     epanetparser/core/display.py

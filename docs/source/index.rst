@@ -25,6 +25,7 @@ The `epanetparser` source code is hosted
 
    usage
    hierarchy
+   architecture
 
 .. toctree::
    :maxdepth: 2
@@ -32,12 +33,20 @@ The `epanetparser` source code is hosted
 
    rules
    validation_categories
+   validation_layers
 
 .. toctree::
    :maxdepth: 2
    :caption: The epanetparser library
 
    library
+   parser
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Simulation
+
+   simulation_validation
 
 .. toctree::
    :maxdepth: 2

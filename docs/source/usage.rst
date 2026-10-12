@@ -366,6 +366,29 @@ and validation. WNTR is only needed for the simulation step. This separation
 allows you to use epanetparser for static validation in environments where
 EPANET/WNTR cannot be installed.
 
+Simulating from the command line
+--------------------------------
+
+The ``validate`` subcommand can run a hydraulic simulation and validate the
+results in the same invocation. The simulation layer is opt-in:
+
+.. code-block:: console
+
+    # Static validation, then simulate and validate the results
+    $ epanetparser validate -f model.inp --simulate \
+        --simulation-ruleset hydraulic
+
+    # Skip static validation and run only the simulation layer
+    $ epanetparser validate -f model.inp --simulation-only \
+        --simulation-ruleset hydraulic
+
+``--simulate`` runs the static rule sets first and then adds a simulation
+layer. ``--simulation-only`` skips the static rules. ``--simulation-ruleset``
+selects the simulation rule sets to run and may be repeated. The results are
+merged into the same report, with each issue tagged by its
+``validation_layer`` (``structural``, ``static`` or ``simulation``). See
+:doc:`simulation_validation` for writing simulation rules.
+
 Downloading additional networks
 -------------------------------
 
