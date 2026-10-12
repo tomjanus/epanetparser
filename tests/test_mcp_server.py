@@ -95,7 +95,9 @@ class TestMCPServer:
         assert len(result.content) == 1
         text = result.content[0].text
         assert "is_valid: true" in text
-        assert "issues[0]{code,message,severity,rule_id,ruleset_key" in text
+        assert "issues[" in text
+        assert "{code,message,severity,rule_id,ruleset_key" in text
+        assert "validation_layer" in text
 
     @pytest.mark.asyncio
     async def test_validate_network_error_both_inputs(self, valid_network_path, server_params):

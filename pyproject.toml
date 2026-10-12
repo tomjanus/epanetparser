@@ -25,7 +25,6 @@ python = "^3.10"
 rich = "^12.2.0"
 rich-argparse = "^1.5.2"
 gdown = "^6.0.0"
-wntr = "^1.4.0"
 platformdirs = "^4.9.2"
 # Parses the bundled default_config.yaml on import; not optional.
 pyyaml = "^6.0"
@@ -33,6 +32,16 @@ pyyaml = "^6.0"
 requests = "^2.32"
 # Required for simulation validation layer (Pandera schemas)
 pandera = "^0.34.1"
+# Required by the vendored parser in epanetparser.core.io, which imports
+# them at import time (network.model, network.elements, network.controls,
+# epanet.io). They are core dependencies of parsing, not of simulation.
+numpy = "^2.2"
+scipy = "^1.10"
+pandas = "^2.0"
+six = "^1.16"
+# Optional: hydraulic simulation and simulation validation. Also the only
+# source of the transitively installed matplotlib/networkx.
+wntr = {version = "^1.4.0", optional = true}
 # Optional: MCP server for agentic AI integration
 mcp = {version = "^1.0", optional = true}
 

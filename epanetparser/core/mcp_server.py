@@ -34,7 +34,18 @@ except ImportError:
     print("MCP package not installed. Install with: pip install epanetparser[agentic]", file=sys.stderr)
     sys.exit(1)
 
-from wntr.epanet.exceptions import EpanetException
+try:
+    from wntr.epanet.exceptions import EpanetException
+except ImportError:  # pragma: no cover - wntr is an optional extra
+    class EpanetException(Exception):
+        """Placeholder used in ``except`` clauses when WNTR is not installed.
+
+        The MCP server catches WNTR's simulator exceptions alongside the
+        built-in ones. WNTR is an optional dependency, so this stand-in keeps
+        the server importable (and its tools registered) without it. It is
+        never raised by this module.
+        """
+
 
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException

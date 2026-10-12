@@ -11,6 +11,6 @@ omit =
     epanetparser/core_rules/epanet_core/*
 
 [report]
-fail_under = 50
+fail_under = 70
 show_missing = true
 precision = 2
