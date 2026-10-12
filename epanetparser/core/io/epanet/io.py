@@ -410,6 +410,23 @@ class InpFile:
 
         return self.wn
 
+    def to_dict(self, wn):
+        """
+        Convert a WaterNetworkModel to a WNTR-compatible dictionary.
+        
+        Parameters
+        ----------
+        wn : WaterNetworkModel
+            The water network model to convert.
+            
+        Returns
+        -------
+        dict
+            Dictionary representation in WNTR JSON format.
+        """
+        from ..network.io import to_dict
+        return to_dict(wn)
+
     def write(self, filename, wn, units=None, version=2.2, force_coordinates=False):
         """
         Write a water network model into an EPANET INP file.
@@ -2566,5 +2583,34 @@ def _read_control_line(line, wn, flow_units, control_name):
 #                        control_name = control_name + '/' + current[i]
 #                    control_name = control_name + '/' + str(run_at_time)
     return control_obj
+
+
+def read_inp_to_dict(filepath):
+    """
+    Parse an EPANET INP file into a WNTR-compatible dictionary.
+    
+    This uses the existing vendored WNTR parsing logic to read the INP file
+    into a WaterNetworkModel, then converts it to a dictionary.
+    
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the EPANET INP file.
+        
+    Returns
+    -------
+    dict
+        Dictionary representation in WNTR JSON format.
+        
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    EpanetException
+        If the file cannot be parsed.
+    """
+    inp_file = InpFile()
+    wn = inp_file.read(filepath)
+    return inp_file.to_dict(wn)
 
 

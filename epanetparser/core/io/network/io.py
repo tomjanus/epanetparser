@@ -271,9 +271,47 @@ def from_dict(d: dict, append=None):
                 control_count += 1
                 control_name = "control " + str(control_count)
                 ta = control["then_actions"][0].split()
-                tstring = " ".join([ta[0], ta[1], ta[4]])
+                # Handle different then_actions formats:
+                # Format 1: "OPEN" or "CLOSED" (simple status change)
+                # Format 2: "LINK name STATUS value" or "PUMP name STATUS value"
+                if len(ta) == 1:
+                    # Simple OPEN/CLOSED - need to infer from condition
+                    tstring = ta[0]
+                elif len(ta) >= 5:
+                    tstring = " ".join([ta[0], ta[1], ta[4]])
+                else:
+                    tstring = " ".join(ta)
                 cond = control["condition"].split()
-                if cond[0].lower() == "system":
+                # Handle different condition formats:
+                # "AT TIME 1" -> ["AT", "TIME", "1"]
+                # "IF NODE T1 ABOVE 3.9" -> ["IF", "NODE", "T1", "ABOVE", "3.9"]
+                # "IF TANK 1 LEVEL BELOW 17.1" -> ["IF", "TANK", "1", "LEVEL", "BELOW", "17.1"]
+                # "TANK T1 LEVEL ABOVE 3.9" (old JSON format) -> ["TANK", "T1", "LEVEL", "ABOVE", "3.9"]
+                if cond[0].upper() == "AT" and cond[1].upper() == "TIME":
+                    # Time-based condition: AT TIME <value>
+                    cstr = " ".join(["AT", "TIME", cond[2] if len(cond) > 2 else "0"])
+                elif cond[0].upper() == "IF":
+                    # Already in correct format: IF NODE/TANK ...
+                    cstr = " ".join(cond)
+                elif cond[0].upper() == "NODE":
+                    # Node-based condition: NODE <name> <above/below> <value>
+                    if len(cond) >= 4:
+                        cstr = " ".join(["IF", "NODE", cond[1], cond[2], cond[3]])
+                    else:
+                        cstr = " ".join(["IF"] + cond[1:])
+                elif cond[0].upper() == "TANK":
+                    # Tank-based condition: TANK <id> LEVEL <above/below> <value>
+                    # Convert to NODE format for _read_control_line (tanks are nodes in EPANET)
+                    # Handle both "TANK T1 LEVEL ABOVE 3.9" and "IF TANK T1 LEVEL ABOVE 3.9"
+                    if len(cond) >= 5 and cond[2].upper() == "LEVEL":
+                        # Format: TANK T1 LEVEL ABOVE 3.9
+                        cstr = " ".join(["IF", "NODE", cond[1], cond[3], cond[4]])
+                    elif len(cond) >= 4:
+                        # Format: TANK T1 ABOVE 3.9 (without LEVEL)
+                        cstr = " ".join(["IF", "NODE", cond[1], cond[2], cond[3]])
+                    else:
+                        cstr = " ".join(["IF", "NODE"] + cond[1:])
+                elif cond[0].lower() == "system":
                     cstr = " ".join(["AT", cond[1], cond[3], cond[4] if len(cond) > 4 else ""])
                 else:
                     cstr = " ".join(["IF", cond[0], cond[1], cond[3], cond[4]])

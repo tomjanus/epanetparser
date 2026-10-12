@@ -30,6 +30,12 @@ from .network.io import (
     write_inpfile,
     read_inpfile,
 )
+from .inp_parser import read_inp_to_dict
+from .inp_errors import (
+    InpParseError,
+    InpSyntaxError,
+    InpSemanticError,
+)
 
 __all__ = [
     "WaterNetworkModel",
@@ -40,4 +46,8 @@ __all__ = [
     "read_json",
     "write_inpfile",
     "read_inpfile",
+    "read_inp_to_dict",
+    "InpParseError",
+    "InpSyntaxError",
+    "InpSemanticError",
 ]
