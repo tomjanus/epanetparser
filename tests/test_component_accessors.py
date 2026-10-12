@@ -163,10 +163,8 @@ class TestNode:
         """attrs is a view of the fields, so it cannot drift from data."""
         raw = first_raw(net1["raw"], "nodes")
         node = net1["network"].component("nodes", raw["name"])
-        # WNTR's to_dict only outputs a subset of fields for nodes
-        # (name, node_type, coordinates). The parsed node's attrs
-        # reflect what WNTR's to_dict serializes.
-        assert set(node.attrs) == {"name", "node_type", "coordinates"}
+        # Every field WNTR's to_dict serialized is exposed on the parsed node.
+        assert set(raw) <= set(node.attrs)
 
 
 class TestLink:

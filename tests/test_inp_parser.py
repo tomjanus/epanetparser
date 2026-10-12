@@ -65,15 +65,13 @@ class TestInpParserBasic:
 
         assert len(nodes) == 785
 
-        # WNTR's to_dict only outputs minimal fields for nodes:
-        # name, node_type, coordinates
+        # Junctions carry their full hydraulic attributes.
         junction = next(n for n in nodes if n["node_type"] == "Junction")
         assert "name" in junction
         assert "node_type" in junction
         assert "coordinates" in junction
-        # Note: elevation, base_demand, etc. are NOT in to_dict output
-        assert "elevation" not in junction
-        assert "base_demand" not in junction
+        assert "elevation" in junction
+        assert "base_demand" in junction
 
         # Reservoir also has minimal fields
         reservoir = next(n for n in nodes if n["node_type"] == "Reservoir")
@@ -399,9 +397,8 @@ P1 1.0
         """Pipe vertices are parsed if present."""
         result = read_inp_to_dict(VALID_INP)
 
-        # Vertices field not in minimal link output from to_dict
         pipe = next(l for l in result["links"] if l["link_type"] == "Pipe")
-        assert "vertices" not in pipe  # Not included in minimal output
+        assert "vertices" in pipe
 
     def test_tags_section(self):
         """TAGS section is parsed if present."""

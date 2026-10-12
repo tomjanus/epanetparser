@@ -24,10 +24,34 @@ from .epanet.util import (
     FlowUnits,
     HydParam,
     MassUnits,
+    QualParam,
     to_si,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _new_report_params() -> Dict[str, bool]:
+    """Default report parameter flags (mirrors WNTR ReportOptions)."""
+    ret: Dict[str, bool] = dict(
+        elevation=False, demand=True, head=True, pressure=True,
+        quality=True, length=False, diameter=False, flow=True,
+        velocity=True, headloss=True, position=False, setting=False,
+        reaction=False)
+    ret["f-factor"] = False
+    return ret
+
+
+def _new_param_opts() -> Dict[str, dict]:
+    """Default per-parameter report options (mirrors WNTR ReportOptions)."""
+    ret: Dict[str, dict] = dict(
+        elevation=dict(), demand=dict(), head=dict(), pressure=dict(),
+        quality=dict(), length=dict(), diameter=dict(), flow=dict(),
+        velocity=dict(), headloss=dict(), position=dict(), setting=dict(),
+        reaction=dict())
+    ret["f-factor"] = dict()
+    return ret
+
 
 # INP section headers in parsing order
 _INP_SECTIONS = [
@@ -102,42 +126,90 @@ class InpParser:
 
         # Data structures matching WNTR dict output
         self.result: Dict[str, Any] = {
-            "version": "wntr-1.4.0",
+            "version": "standalone-inp-dict-wntr-1.4.0-compatible",
             "comment": "WaterNetworkModel - all values given in SI units",
             "name": str(self.filepath),
             "references": [],
             "options": {
-                "time": {},
+                "time": {
+                    "duration": 0,
+                    "hydraulic_timestep": 3600,
+                    "quality_timestep": 360,
+                    "rule_timestep": 360,
+                    "pattern_timestep": 3600,
+                    "pattern_start": 0,
+                    "report_timestep": 3600,
+                    "report_start": 0,
+                    "start_clocktime": 0,
+                    "statistic": "NONE",
+                    "pattern_interpolation": False,
+                },
                 "hydraulic": {
                     "headloss": "H-W",
                     "hydraulics": None,
                     "hydraulics_filename": None,
                     "viscosity": 1.0,
                     "specific_gravity": 1.0,
-                    "pattern": None,
+                    "pattern": "1",
                     "demand_multiplier": 1.0,
-                    "demand_model": "DDA",
+                    "demand_model": "DD",
                     "minimum_pressure": 0.0,
                     "required_pressure": 0.07,
                     "pressure_exponent": 0.5,
                     "emitter_exponent": 0.5,
-                    "trials": 50,
-                    "accuracy": 0.01,
-                    "unbalanced": "CONTINUE",
-                    "unbalanced_value": 10,
+                    "trials": 200,
+                    "accuracy": 0.001,
+                    "unbalanced": "STOP",
+                    "unbalanced_value": None,
                     "checkfreq": 2,
                     "maxcheck": 10,
-                    "damplimit": 0.0,
-                    "headerror": 0.0,
-                    "flowchange": 0.0,
-                    "inpfile_units": "CFS",
+                    "damplimit": 0,
+                    "headerror": 0,
+                    "flowchange": 0,
+                    "inpfile_units": "GPM",
                     "inpfile_pressure_units": None,
                 },
-                "report": {},
-                "quality": {},
-                "reaction": {},
-                "energy": {},
-                "graphics": {},
+                "report": {
+                    "pagesize": None,
+                    "report_filename": None,
+                    "status": "NO",
+                    "summary": "YES",
+                    "energy": "NO",
+                    "nodes": False,
+                    "links": False,
+                    "report_params": _new_report_params(),
+                    "param_opts": _new_param_opts(),
+                },
+                "quality": {
+                    "parameter": "NONE",
+                    "trace_node": None,
+                    "chemical_name": "CHEMICAL",
+                    "diffusivity": 1.0,
+                    "tolerance": 0.01,
+                    "inpfile_units": "mg/L",
+                },
+                "reaction": {
+                    "bulk_order": 1.0,
+                    "wall_order": 1.0,
+                    "tank_order": 1.0,
+                    "bulk_coeff": 0.0,
+                    "wall_coeff": 0.0,
+                    "limiting_potential": None,
+                    "roughness_correl": None,
+                },
+                "energy": {
+                    "global_price": 0,
+                    "global_pattern": None,
+                    "global_efficiency": None,
+                    "demand_charge": None,
+                },
+                "graphics": {
+                    "dimensions": None,
+                    "units": None,
+                    "offset": None,
+                    "image_filename": None,
+                    "map_filename": None,
+                },
                 "user": {},
             },
             "curves": [],
@@ -155,6 +227,7 @@ class InpParser:
         self._defined_patterns: set = set()
         self._referenced_curves: Dict[str, int] = {}  # curve_name -> line_number
         self._referenced_patterns: Dict[str, int] = {}  # pattern_name -> line_number
+        self._curve_usage: Dict[str, str] = {}  # curve_name -> HEAD/EFFICIENCY/HEADLOSS/VOLUME
         
         # Store TITLE content separately
         self._title_lines: List[str] = []
@@ -294,6 +367,8 @@ class InpParser:
             if section in self.sections and self.sections[section]:
                 self._parse_section(section)
 
+        self._finalize_curves()
+
         # Set metadata from TITLE section
         if self._title_lines:
             self.result["comment"] = "\n".join(self._title_lines)
@@ -393,24 +468,28 @@ class InpParser:
             elif key == "pattern":
                 options.setdefault("hydraulic", {})["pattern"] = val
             elif key == "quality":
-                # Quality parameter can be: NONE, CHEMICAL, AGE, TRACE
-                # If CHEMICAL, format is: CHEMICAL <name> <units>
-                # Some INP files omit "CHEMICAL" and just give the chemical name
+                # Mirrors WNTR: QUALITY <mode> [<chemical> <units>] or
+                # QUALITY <chemical> <units>. Unknown leading token is treated
+                # as the chemical name (chemical_name keeps original casing).
                 quality_parts = val.split()
-                valid_params = {"NONE", "CHEMICAL", "AGE", "TRACE"}
-                first = quality_parts[0].upper()
-                if first in valid_params:
-                    options.setdefault("quality", {})["parameter"] = first
-                    if first == "CHEMICAL" and len(quality_parts) >= 2:
-                        options.setdefault("quality", {})["chemical_name"] = quality_parts[1]
-                    if len(quality_parts) >= 3:
-                        options.setdefault("quality", {})["inpfile_units"] = quality_parts[2]
-                else:
-                    # Assume CHEMICAL with omitted keyword
-                    options.setdefault("quality", {})["parameter"] = "CHEMICAL"
-                    options.setdefault("quality", {})["chemical_name"] = quality_parts[0]
+                quality = options.setdefault("quality", {})
+                mode = quality_parts[0].upper() if quality_parts else "NONE"
+                if mode in ("NONE", "AGE"):
+                    quality["parameter"] = mode
+                elif mode == "TRACE":
+                    quality["parameter"] = "TRACE"
                     if len(quality_parts) >= 2:
-                        options.setdefault("quality", {})["inpfile_units"] = quality_parts[1]
+                        quality["trace_node"] = quality_parts[1]
+                else:
+                    quality["parameter"] = "CHEMICAL"
+                    quality["chemical_name"] = quality_parts[0]
+                    if len(quality_parts) >= 2:
+                        if "mg" in quality_parts[1].lower():
+                            self.mass_units = MassUnits.mg
+                            quality["inpfile_units"] = quality_parts[1]
+                        elif "ug" in quality_parts[1].lower():
+                            self.mass_units = MassUnits.ug
+                            quality["inpfile_units"] = quality_parts[1]
             elif key == "trace_node":
                 options.setdefault("quality", {})["trace_node"] = val
             elif key == "chemical_name":
@@ -444,6 +523,8 @@ class InpParser:
                 options.setdefault("energy", {})["global_efficiency"] = self._to_float(val, line_num, "global_efficiency")
             elif key == "demand_charge":
                 options.setdefault("energy", {})["demand_charge"] = self._to_float(val, line_num, "demand_charge")
+            elif key == "map":
+                options.setdefault("graphics", {})["map_filename"] = val
 
         self.result["options"] = options
 
@@ -610,10 +691,36 @@ class InpParser:
                 y = self._to_float(values[2], line_num, "curve y-value")
                 self.curves[name].append((x, y))
 
-        # Convert curves to output format
-        for name, points in self.curves.items():
-            # Determine curve type from usage (default to HEAD)
-            curve_type = "HEAD"
+    def _finalize_curves(self) -> None:
+        """Emit curves in output format with SI-converted points.
+
+        Curve type is inferred from the first place the curve is used
+        (pump head curve, pump efficiency curve, GPV headloss curve, or tank
+        volume curve). Curves that are never referenced keep a ``None`` type
+        and unconverted points, matching WNTR.
+        """
+        flow_units = self.flow_units or FlowUnits.GPM
+        for name, raw_points in self.curves.items():
+            curve_type = self._curve_usage.get(name)
+            if curve_type == "HEAD":
+                points = [
+                    (to_si(flow_units, x, HydParam.Flow), to_si(flow_units, y, HydParam.HydraulicHead))
+                    for x, y in raw_points
+                ]
+            elif curve_type == "EFFICIENCY":
+                points = [(to_si(flow_units, x, HydParam.Flow), y) for x, y in raw_points]
+            elif curve_type == "HEADLOSS":
+                points = [
+                    (to_si(flow_units, x, HydParam.Flow), to_si(flow_units, y, HydParam.HeadLoss))
+                    for x, y in raw_points
+                ]
+            elif curve_type == "VOLUME":
+                points = [
+                    (to_si(flow_units, x, HydParam.Length), to_si(flow_units, y, HydParam.Volume))
+                    for x, y in raw_points
+                ]
+            else:
+                points = list(raw_points)
             self.result["curves"].append({
                 "name": name,
                 "curve_type": curve_type,
@@ -677,14 +784,25 @@ class InpParser:
                 "node_type": "Junction",
                 "elevation": elevation,
                 "base_demand": base_demand,
-                "demand_pattern_name": pattern_name,
                 "demand_category": None,
+                "demand_pattern": pattern_name,
+                "demand_pattern_name": None,
+                "demand_timeseries_list": [
+                    {
+                        "base_val": base_demand,
+                        "pattern_name": pattern_name,
+                        "category": None,
+                    }
+                ],
                 "emitter_coefficient": None,
-                "coordinates": [],
-                "initial_quality": None,
+                "coordinates": (0.0, 0.0),
+                "initial_quality": 0.0,
                 "minimum_pressure": None,
                 "pressure_exponent": None,
                 "required_pressure": None,
+                "leak": False,
+                "leak_area": 0.0,
+                "leak_discharge_coeff": 0.0,
                 "tag": None,
             }
             self.result["nodes"].append(node)
@@ -710,11 +828,15 @@ class InpParser:
             node = {
                 "name": name,
                 "node_type": "Reservoir",
-                "elevation": 0.0,
+                "elevation": None,
                 "base_head": head,
                 "head_pattern_name": pattern_name,
-                "coordinates": [],
-                "initial_quality": None,
+                "emitter_coefficient": None,
+                "coordinates": (0.0, 0.0),
+                "initial_quality": 0.0,
+                "leak": False,
+                "leak_area": 0.0,
+                "leak_discharge_coeff": 0.0,
                 "tag": None,
             }
             self.result["nodes"].append(node)
@@ -750,6 +872,7 @@ class InpParser:
                 if values[7] != "*":
                     vol_curve_name = values[7]
                     self._referenced_curves[vol_curve_name] = line_num
+                    self._curve_usage.setdefault(vol_curve_name, "VOLUME")
             if len(values) >= 9:
                 overflow = values[8].upper() in ("YES", "TRUE", "1")
 
@@ -764,11 +887,15 @@ class InpParser:
                 "min_vol": min_vol,
                 "vol_curve_name": vol_curve_name,
                 "overflow": overflow,
-                "coordinates": [],
-                "initial_quality": None,
+                "emitter_coefficient": None,
+                "coordinates": (0.0, 0.0),
+                "initial_quality": 0.0,
                 "mixing_fraction": None,
                 "mixing_model": None,
                 "bulk_coeff": None,
+                "leak": False,
+                "leak_area": 0.0,
+                "leak_discharge_coeff": 0.0,
                 "tag": None,
             }
             self.result["nodes"].append(node)
@@ -806,15 +933,19 @@ class InpParser:
             if len(values) >= 7:
                 minor_loss = self._to_float(values[6], line_num, "minor_loss")
 
-            status = "OPEN"
+            status = "Open"
             check_valve = False
             if len(values) >= 8:
                 status_val = values[7].upper()
                 if status_val == "CV":
-                    status = "OPEN"
+                    status = "Open"
                     check_valve = True
+                elif status_val in ("OPEN", "OPENED"):
+                    status = "Open"
+                elif status_val == "CLOSED":
+                    status = "Closed"
                 else:
-                    status = status_val
+                    status = status_val.title()
 
             link = {
                 "name": name,
@@ -826,11 +957,11 @@ class InpParser:
                 "roughness": roughness,
                 "minor_loss": minor_loss,
                 "initial_status": status,
+                "initial_setting": 1.0,
                 "check_valve": check_valve,
                 "bulk_coeff": None,
                 "wall_coeff": None,
                 "vertices": [],
-                "tag": None,
             }
             self.result["links"].append(link)
 
@@ -869,6 +1000,7 @@ class InpParser:
                     pump_type = "HEAD"
                     pump_curve_name = val
                     self._referenced_curves[pump_curve_name] = line_num
+                    self._curve_usage.setdefault(pump_curve_name, "HEAD")
                 elif keyword == "POWER":
                     pump_type = "POWER"
                     power = to_si(self.flow_units, self._to_float(val, line_num, "power"), HydParam.Power)
@@ -896,14 +1028,15 @@ class InpParser:
                 "power": power,
                 "pump_curve_name": pump_curve_name,
                 "base_speed": speed,
+                "speed": None,
                 "speed_pattern_name": speed_pattern_name,
-                "initial_status": "OPEN",
+                "initial_status": "Open",
+                "initial_setting": 1.0,
+                "efficiency_curve": None,
                 "efficiency_curve_name": None,
                 "energy_pattern": None,
                 "energy_price": None,
-                "initial_setting": None,
                 "vertices": [],
-                "tag": None,
             }
             self.result["links"].append(link)
 
@@ -939,6 +1072,7 @@ class InpParser:
             elif valve_type == "GPV":
                 setting = values[5]  # curve name
                 self._referenced_curves[setting] = line_num
+                self._curve_usage.setdefault(setting, "HEADLOSS")
             else:
                 raise InpSyntaxError(
                     f"Unknown valve type: {valve_type}",
@@ -960,9 +1094,10 @@ class InpParser:
                 "valve_type": valve_type,
                 "minor_loss": minor_loss,
                 "initial_setting": setting,
-                "initial_status": "ACTIVE",
+                "initial_status": "Active",
                 "headloss_curve_name": setting if valve_type == "GPV" else None,
                 "tag": None,
+                "vertices": [],
             }
             self.result["links"].append(link)
 
@@ -996,14 +1131,10 @@ class InpParser:
             x = self._to_float(values[1], line_num, "x coordinate")
             y = self._to_float(values[2], line_num, "y coordinate")
 
-            # Update node or link coordinates
+            # COORDINATES only apply to nodes (matches WNTR)
             for node in self.result["nodes"]:
                 if node["name"] == name:
-                    node["coordinates"] = [x, y]
-                    break
-            for link in self.result["links"]:
-                if link["name"] == name:
-                    link["coordinates"] = [x, y]
+                    node["coordinates"] = (x, y)
                     break
 
     def _parse_vertices(self) -> None:
@@ -1021,7 +1152,7 @@ class InpParser:
                 if link["name"] == link_name:
                     if "vertices" not in link:
                         link["vertices"] = []
-                    link["vertices"].append([x, y])
+                    link["vertices"].append((x, y))
                     break
 
     def _parse_energy(self) -> None:
@@ -1055,6 +1186,7 @@ class InpParser:
                         # Efficiency curve - store in pump object later
                         # For now, track the curve reference
                         self._referenced_curves[val] = line_num
+                        self._curve_usage.setdefault(val, "EFFICIENCY")
                         # Store in a temporary place for later assignment to pump
                         if "pump_efficiency_curves" not in self.result:
                             self.result["pump_efficiency_curves"] = {}
@@ -1073,16 +1205,20 @@ class InpParser:
             # Find link and update status/setting
             for link in self.result["links"]:
                 if link["name"] == name:
-                    if setting_str in ("OPEN", "CLOSED"):
-                        link["initial_status"] = setting_str
+                    if setting_str in ("OPEN", "OPENED"):
+                        link["initial_status"] = "Open"
+                    elif setting_str == "CLOSED":
+                        link["initial_status"] = "Closed"
+                    elif setting_str == "ACTIVE":
+                        link["initial_status"] = "Active"
                     else:
                         # It's a numeric setting
                         try:
                             setting = self._to_float(setting_str, line_num, "setting")
                             link["initial_setting"] = setting
-                            link["initial_status"] = "ACTIVE" if link["link_type"] == "Valve" else "OPEN"
+                            link["initial_status"] = "Active" if link["link_type"] == "Valve" else "Open"
                         except InpSyntaxError:
-                            link["initial_status"] = setting_str
+                            link["initial_status"] = setting_str.title()
                     break
 
     def _parse_demands(self) -> None:
@@ -1116,13 +1252,28 @@ class InpParser:
 
     def _parse_quality(self) -> None:
         """Parse QUALITY section (initial quality for nodes)."""
+        if not self.flow_units:
+            self.flow_units = FlowUnits.GPM
+
+        parameter = self.result["options"].get("quality", {}).get("parameter")
+
         for line_num, line in self.sections["[QUALITY]"]:
             values, _ = self._split_line(line)
             if len(values) < 2:
                 continue
 
             node_name = values[0]
-            quality = self._to_float(values[1], line_num, "initial_quality")
+            raw_quality = self._to_float(values[1], line_num, "initial_quality")
+
+            if parameter == "CHEMICAL":
+                quality = to_si(
+                    self.flow_units, raw_quality, QualParam.Concentration,
+                    mass_units=self.mass_units,
+                )
+            elif parameter == "AGE":
+                quality = to_si(self.flow_units, raw_quality, QualParam.WaterAge)
+            else:
+                quality = raw_quality
 
             for node in self.result["nodes"]:
                 if node["name"] == node_name:
@@ -1182,23 +1333,36 @@ class InpParser:
 
     def _parse_sources(self) -> None:
         """Parse SOURCES section."""
+        if not self.flow_units:
+            self.flow_units = FlowUnits.GPM
+
+        source_num = 0
         for line_num, line in self.sections["[SOURCES]"]:
             values, _ = self._split_line(line)
-            if len(values) < 4:
+            if len(values) < 3:
                 continue
 
-            # SOURCES section format: Node, Type, Quality, Pattern
-            # No explicit name column - use node name as source name
+            source_num += 1
             node_name = values[0]
             source_type = values[1]
-            strength = self._to_float(values[2], line_num, "source strength")
+            raw_strength = self._to_float(values[2], line_num, "source strength")
+            if source_type.upper() == "MASS":
+                strength = to_si(
+                    self.flow_units, raw_strength, QualParam.SourceMassInject,
+                    mass_units=self.mass_units,
+                )
+            else:
+                strength = to_si(
+                    self.flow_units, raw_strength, QualParam.Concentration,
+                    mass_units=self.mass_units,
+                )
             pattern = values[3] if len(values) >= 4 else None
 
             if pattern:
                 self._referenced_patterns[pattern] = line_num
 
             source = {
-                "name": node_name,  # Use node name as source name
+                "name": "INP" + str(source_num),
                 "node_name": node_name,
                 "source_type": source_type,
                 "strength": strength,
@@ -1230,109 +1394,135 @@ class InpParser:
                         node["mixing_fraction"] = self._to_float(values[2], line_num, "mixing_fraction")
                     break
 
+    def _find_link(self, name: str) -> Optional[Dict[str, Any]]:
+        for link in self.result["links"]:
+            if link["name"] == name:
+                return link
+        return None
+
+    def _find_node(self, name: str) -> Optional[Dict[str, Any]]:
+        for node in self.result["nodes"]:
+            if node["name"] == name:
+                return node
+        return None
+
+    @staticmethod
+    def _str_time_to_sec(value: str) -> int:
+        """Convert EPANET ``HH:MM:SS``, ``HH:MM`` or ``HH`` to seconds."""
+        parts = value.split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(round(float(parts[2])))
+        if len(parts) == 2:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60
+        return int(parts[0]) * 3600
+
+    @staticmethod
+    def _sec_to_hours_min_sec(value: float) -> str:
+        """Format seconds as ``HH:MM:SS`` (hours may exceed 24)."""
+        sec = float(value)
+        hours = int(sec / 3600.0)
+        sec -= hours * 3600
+        mm = int(sec / 60.0)
+        sec -= mm * 60
+        return "{:02d}:{:02d}:{:02d}".format(hours, mm, int(sec))
+
     def _parse_controls(self) -> None:
         """Parse CONTROLS section (simple controls)."""
         for line_num, line in self.sections["[CONTROLS]"]:
-            values, _ = self._split_line(line)
-            if not values:
-                continue
-
-            # Parse simple control format:
-            # LINK <name> <status/setting> IF NODE <name> <condition> <value>
-            # LINK <name> <status/setting> AT <time>
-            
-            # Reconstruct the line for parsing
-            ctrl_text = " ".join(values)
-            
-            # Try to parse as simple control
-            parsed = self._parse_simple_control(ctrl_text, line_num)
-            if parsed:
+            parsed = self._parse_simple_control(line, line_num)
+            if parsed is not None:
                 self.result["controls"].append(parsed)
 
-    def _parse_simple_control(self, ctrl_text: str, line_num: int) -> Optional[Dict[str, Any]]:
-        """Parse a simple control line into structured format."""
-        # Pattern: LINK <name> <action> IF NODE <name> <cond> <value>
-        # Or: LINK <name> <action> AT <time>
-        
-        parts = ctrl_text.split()
+    def _parse_simple_control(self, raw_line: str, line_num: int) -> Optional[Dict[str, Any]]:
+        """Parse a simple control line into the WNTR dict representation.
+
+        The output mirrors the string forms produced by WNTR's
+        ``ControlAction``, ``ValueCondition`` and ``SimTimeCondition``
+        ``__str__`` methods, including the fact that the control name is not
+        included for simple controls.
+        """
+        parts = raw_line.split(";")[0].split()
         if len(parts) < 4:
             return None
-            
-        if parts[0].upper() != "LINK":
+
+        # Leak controls ("JUNCTION <name> ...") are not produced by the core
+        # test networks and are intentionally not handled here.
+        if parts[0].upper() == "JUNCTION":
             return None
-            
-        link_name = parts[1]
-        
-        # Find IF or AT keyword
-        if_keyword_idx = -1
-        at_keyword_idx = -1
-        for idx, part in enumerate(parts[2:], 2):
-            if part.upper() == "IF":
-                if_keyword_idx = idx
-                break
-            elif part.upper() == "AT":
-                at_keyword_idx = idx
-                break
-        
-        if if_keyword_idx > 0:
-            # IF condition format
-            action_parts = parts[2:if_keyword_idx]
-            condition_parts = parts[if_keyword_idx+1:]
-            
-            # Parse action: should be like "CLOSED" or "OPEN" (the action after link name)
-            # Convert to "PUMP PUMP_1 STATUS IS CLOSED"
-            action_text = ""
-            if len(action_parts) >= 1:
-                link_type = "PUMP"  # Default, could be valve too
-                action_type = action_parts[0].upper()
-                if action_type in ("OPEN", "CLOSED"):
-                    action_text = f"{link_type} {link_name} STATUS IS {action_type}"
-                else:
-                    action_text = f"{link_type} {link_name} SETTING IS {action_type}"
+
+        link = self._find_link(parts[1])
+        if link is None:
+            return None
+
+        upper = [p.upper() for p in parts]
+        flow_units = self.flow_units or FlowUnits.GPM
+        status = upper[2]
+
+        if status in ("OPEN", "OPENED", "CLOSED", "ACTIVE"):
+            status_name = {
+                "OPEN": "Open",
+                "OPENED": "Open",
+                "CLOSED": "Closed",
+                "ACTIVE": "Active",
+            }[status]
+            action = "{} {} STATUS IS {}".format(
+                link["link_type"].upper(), parts[1], status_name.upper()
+            )
+        elif link["link_type"] == "Pump":
+            action = "PUMP {} BASE_SPEED IS {}".format(parts[1], float(parts[2]))
+        elif link["link_type"] == "Valve":
+            valve_type = link["valve_type"]
+            if valve_type in ("PRV", "PSV", "PBV"):
+                setting = to_si(flow_units, float(parts[2]), HydParam.Pressure)
+            elif valve_type == "FCV":
+                setting = to_si(flow_units, float(parts[2]), HydParam.Flow)
+            elif valve_type == "TCV":
+                setting = float(parts[2])
             else:
-                # Fallback
-                action_text = f"PUMP {link_name} STATUS IS OPEN"
-            
-            # Parse condition: IF NODE <name> <cond> <value>
-            if len(condition_parts) >= 4 and condition_parts[0].upper() == "NODE":
-                node_name = condition_parts[1]
-                cond = condition_parts[2].upper()
-                value = condition_parts[3]
-                
-                # Use format expected by _read_control_line: IF NODE <name> <cond> <value>
-                cond_text = f"IF NODE {node_name} {cond} {value}"
-                
-                return {
-                    "name": f"control_{len(self.result['controls']) + 1}",
-                    "type": "simple",
-                    "condition": cond_text,
-                    "then_actions": [action_text],
-                }
-        elif at_keyword_idx > 0:
-            # AT time format
-            # Include link type and name in action
-            link_type = parts[0]
-            link_name = parts[1]
-            action_parts = parts[2:at_keyword_idx]
-            time_parts = parts[at_keyword_idx+1:]
-            
-            # Build action text with link type and name
-            action_text = " ".join([link_type, link_name] + action_parts)
-            time_text = " ".join(time_parts)
-            
-            return {
-                "name": f"control_{len(self.result['controls']) + 1}",
-                "type": "simple",
-                "condition": f"AT {time_text}",
-                "then_actions": [action_text],
-            }
-        
-        # Fallback: store raw text
+                setting = parts[2]
+            action = "VALVE {} SETTING IS {}".format(parts[1], setting)
+        else:
+            return None
+
+        if "TIME" in upper:
+            # AT TIME <t>  (EPANET time format, or decimal hours)
+            time_token = upper[5]
+            if ":" in time_token:
+                run_at_time = int(self._str_time_to_sec(time_token))
+            else:
+                run_at_time = int(float(time_token) * 3600)
+            condition = "SYSTEM TIME IS {}".format(
+                self._sec_to_hours_min_sec(run_at_time)
+            )
+        elif "CLOCKTIME" in upper:
+            return None
+        else:
+            if "IF" not in upper:
+                return None
+            node = self._find_node(parts[5])
+            if node is None:
+                return None
+            relation = upper[6]
+            if relation not in ("ABOVE", "BELOW"):
+                return None
+            raw_threshold = float(parts[7])
+            if node["node_type"] == "Junction":
+                threshold = to_si(flow_units, raw_threshold, HydParam.Pressure)
+                attr = "pressure"
+            elif node["node_type"] == "Tank":
+                threshold = to_si(flow_units, raw_threshold, HydParam.HydraulicHead)
+                attr = "level"
+            else:
+                return None
+            condition = "{} {} {} {} {}".format(
+                node["node_type"].upper(), parts[5], attr.upper(),
+                relation, threshold,
+            )
+
         return {
-            "name": f"control_{len(self.result['controls']) + 1}",
             "type": "simple",
-            "condition": "",
-            "then_actions": [ctrl_text],
+            "condition": condition,
+            "then_actions": [action],
         }
 
     def _parse_rules(self) -> None:
@@ -1441,10 +1631,13 @@ class InpParser:
 
         # Assign pump efficiency curves to pump objects
         if "pump_efficiency_curves" in self.result:
+            curves_by_name = {c["name"]: c for c in self.result["curves"]}
             for pump_name, curve_name in self.result["pump_efficiency_curves"].items():
                 for link in self.result["links"]:
                     if link["name"] == pump_name and link["link_type"] == "Pump":
                         link["efficiency_curve_name"] = curve_name
+                        if curve_name in curves_by_name:
+                            link["efficiency_curve"] = curves_by_name[curve_name]
                         break
             # Clean up temporary storage
             del self.result["pump_efficiency_curves"]

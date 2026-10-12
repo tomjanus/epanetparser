@@ -258,7 +258,9 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         for k in dir(self):
             if not k.startswith('_') and \
               k not in ['demand', 'head', 'leak_demand', 'leak_status', 
-                        'level', 'pressure', 'quality', 'vol_curve', 'head_timeseries']:
+                        'level', 'pressure', 'quality', 'vol_curve', 'head_timeseries',
+                        'data', 'component_kind', 'node_types', 'type', 'attrs',
+                        'as_dict', 'as_json', 'validate']:
                 try:
                     val = getattr(self, k)
                     if not isinstance(val, types.MethodType):
@@ -272,7 +274,7 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
                             d[k] = str(val)
                         else:
                             d[k] = val
-                except DeprecationWarning: pass
+                except (DeprecationWarning, AttributeError): pass
         return d
 
     def to_ref(self):
@@ -569,21 +571,26 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
             if not k.startswith('_') and k not in [
                 'flow', 'cv', 'friction_factor', 'headloss',
                 'quality', 'reaction_rate', 'setting', 'status', 'velocity', 'speed_timeseries',
+                'efficiency', 'data', 'component_kind', 'link_types', 'type', 'attrs',
+                'as_dict', 'as_json', 'validate', 'start_node', 'end_node',
             ]:
-                val = getattr(self, k)
-                if not isinstance(val, types.MethodType):
-                    if hasattr(val, "to_ref"):
-                        if hasattr(self, k+"_name") and getattr(self, k+"_name") is not None:
-                            continue
-                        d[k] = val.to_ref()
-                    elif hasattr(val, "to_list"):
-                        d[k] = val.to_list()
-                    elif hasattr(val, "to_dict"):
-                        d[k] = val.to_dict()
-                    elif isinstance(val, (enum.IntEnum, enum.Enum)):
-                        d[k] = str(val)
-                    else:
-                        d[k] = val
+                try:
+                    val = getattr(self, k)
+                    if not isinstance(val, types.MethodType):
+                        if hasattr(val, "to_ref"):
+                            if hasattr(self, k+"_name") and getattr(self, k+"_name") is not None:
+                                continue
+                            d[k] = val.to_ref()
+                        elif hasattr(val, "to_list"):
+                            d[k] = val.to_list()
+                        elif hasattr(val, "to_dict"):
+                            d[k] = val.to_dict()
+                        elif isinstance(val, (enum.IntEnum, enum.Enum)):
+                            d[k] = str(val)
+                        else:
+                            d[k] = val
+                except (DeprecationWarning, AttributeError):
+                    pass
         return d
 
     def to_ref(self):

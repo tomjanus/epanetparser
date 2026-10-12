@@ -19,7 +19,7 @@ from epanetparser.core.epanettypes import (
     WNTREPANETPump,
     WNTREPANETValve,
 )
-from .base import Registry, LinkStatus
+from .base import Registry, LinkStatus, Node, Link
 from .options import TimeOptions
 from ..epanet.util import MixType
 from .validation_control import unvalidated_setter, require, is_validation_enabled
@@ -30,7 +30,7 @@ warnings.simplefilter("ignore", OptimizeWarning) # ignore scipy.optimize.Optimiz
 logger = logging.getLogger(__name__)
 
 
-class Junction(WNTREPANETJunction):
+class Junction(WNTREPANETJunction, Node):
     """
     Junction class, inherited from WNTREPANETJunction.
     
@@ -231,10 +231,6 @@ class Junction(WNTREPANETJunction):
         """str : ``"Junction"`` (read only)"""
         return 'Junction'
 
-    def to_dict(self):
-        """Dictionary representation of the Junction for WNTR serialization."""
-        return self.as_dict()
-
     def add_demand(self, base, pattern_name, category=None):
         """Add a new demand entry to the Junction
         
@@ -400,7 +396,7 @@ class Junction(WNTREPANETJunction):
             wn.remove_pattern(pattern_name)
 
 
-class Tank(WNTREPANETTank):
+class Tank(WNTREPANETTank, Node):
     """
     Tank class, inherited from WNTREPANETTank.
     
@@ -640,14 +636,6 @@ class Tank(WNTREPANETTank):
         """returns ``"Tank"``"""
         return 'Tank'
 
-    def to_dict(self):
-        """Dictionary representation of the Tank for WNTR serialization."""
-        data = self.as_dict()
-        # Ensure elevation is included from _elevation
-        if "elevation" not in data:
-            data["elevation"] = self._elevation
-        return data
-
     @property
     def coordinates(self):
         """tuple : X-Y coordinates of the node location"""
@@ -808,7 +796,7 @@ class Tank(WNTREPANETTank):
         wn._discard_control(self._leak_end_control_name)
 
 
-class Reservoir(WNTREPANETReservoir):
+class Reservoir(WNTREPANETReservoir, Node):
     """
     Reservoir class, inherited from WNTREPANETReservoir
     
@@ -915,14 +903,6 @@ class Reservoir(WNTREPANETReservoir):
     def head(self, value):
         self._head_timeseries.base_value = value
 
-    def to_dict(self):
-        """Dictionary representation of the Reservoir for WNTR serialization."""
-        data = self.as_dict()
-        # Ensure base_head is included from head_timeseries
-        if "base_head" not in data and hasattr(self, '_head_timeseries'):
-            data["base_head"] = self._head_timeseries.base_value
-        return data
-
     @property
     def coordinates(self):
         """tuple : X-Y coordinates of the node location"""
@@ -962,7 +942,7 @@ class Reservoir(WNTREPANETReservoir):
         return 0.0
 
 
-class Pipe(WNTREPANETPipe):
+class Pipe(WNTREPANETPipe, Link):
     """
     Pipe class, inherited from WNTREPANETPipe.
     
@@ -1070,10 +1050,6 @@ class Pipe(WNTREPANETPipe):
         self._check_valve = self.data.get("check_valve", False)
         self._bulk_coeff = self.data.get("bulk_coeff")
         self._wall_coeff = self.data.get("wall_coeff")
-        
-    def to_dict(self):
-        """Dictionary representation of the Pipe for WNTR serialization."""
-        return self.as_dict()
         
     def __repr__(self):
         return "<Pipe '{}' from '{}' to '{}', length={}, diameter={}, roughness={}, minor_loss={}, check_valve={}, status={}>".format(self._link_name,
@@ -1226,7 +1202,7 @@ class Pipe(WNTREPANETPipe):
         return self._reaction_rate
 
 
-class Pump(WNTREPANETPump):
+class Pump(WNTREPANETPump, Link):
     """
     Pump class, inherited from WNTREPANETPump.
 
@@ -1341,24 +1317,6 @@ class Pump(WNTREPANETPump):
         self._outage_rule_name = name+'_outage'
         self._after_outage_rule_name = name+'_after_outage'
   
-    def to_dict(self):
-        """Dictionary representation of the Pump for WNTR serialization."""
-        data = self.as_dict()
-        # Ensure pump-specific fields are included
-        if hasattr(self, '_base_power'):
-            data["power"] = self._base_power
-        if hasattr(self, '_pump_curve_name'):
-            data["pump_curve_name"] = self._pump_curve_name
-        if hasattr(self, '_efficiency_curve_name'):
-            data["efficiency_curve_name"] = self._efficiency_curve_name
-        if hasattr(self, '_energy_price'):
-            data["energy_price"] = self._energy_price
-        if hasattr(self, '_energy_pattern'):
-            data["energy_pattern"] = self._energy_pattern
-        # pump_type is a property
-        data["pump_type"] = self.pump_type
-        return data
- 
     def _compare(self, other):
         if not super(Pump, self)._compare(other):
             return False
@@ -1833,7 +1791,7 @@ class PowerPump(Pump):
         self._base_power = value
 
 
-class Valve(WNTREPANETValve):
+class Valve(WNTREPANETValve, Link):
     
     """
     Valve class, inherited from WNTREPANETValve.
@@ -1938,14 +1896,6 @@ class Valve(WNTREPANETValve):
         self._user_status = self.data.get("initial_status", LinkStatus.Active)
         self._initial_setting = self.data.get("initial_setting", 0.0)
   
-    def to_dict(self):
-        """Dictionary representation of the Valve for WNTR serialization."""
-        data = self.as_dict()
-        # Ensure valve_type is included from the class property
-        if "valve_type" not in data:
-            data["valve_type"] = self.valve_type
-        return data
- 
     def __repr__(self):
         fmt = "<Valve '{}' from '{}' to '{}', valve_type='{}', diameter={}, minor_loss={}, setting={}, status={}>"
         return fmt.format(self._link_name,
@@ -2664,9 +2614,8 @@ class TimeSeries:
         """Returns the baseline value."""
         return self._base
     @base_value.setter
-    @unvalidated_setter
     def base_value(self, value):
-        if not isinstance(value, (int, float, complex)):
+        if is_validation_enabled() and not isinstance(value, (int, float, complex)):
             raise ValueError('TimeSeries->base_value must be a number')
         self._base = value
 
