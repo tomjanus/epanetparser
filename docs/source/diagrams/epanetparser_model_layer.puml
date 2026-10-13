@@ -149,7 +149,9 @@ class WNTREPANETNetwork #lightgreen {
   (network, errors, warnings). Exactly
   one of network or errors is not None.
   Both .inp and WNTR .json are accepted;
-  .inp is converted with WNTR first.
+  .inp is read by the standalone
+  read_inp_to_dict parser, which raises
+  InpParseError rather than using WNTR.
 }
 
 class WNTRNetworkStatistics #lightgray {

@@ -19,6 +19,7 @@ The rest of this file covers the declaration forms, which are cheap to state and
 easy to regress.
 """
 import pytest
+from pathlib import Path
 
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.validation import (
@@ -183,6 +184,24 @@ class TestBrokenRules:
         )
         report = minimal.validate(context)
         assert "X_ALWAYS" in report.codes()
+
+    def test_an_unset_energy_demand_charge_is_not_a_broken_rule(self):
+        """An INP with no [ENERGY] section must not crash the core ruleset.
+
+        The standalone INP parser leaves ``energy.demand_charge`` as ``None``
+        when no [ENERGY] section is present. The rule therefore has to treat a
+        missing charge the way its price and efficiency neighbours do --- as
+        "not specified" --- rather than compare ``None`` to a number and raise
+        a ``TypeError``, which the engine reports as a broken rule.
+        """
+        from epanetparser.core.validation import validate
+
+        path = Path(__file__).resolve().parent / "data" / "simulation_failing_network.inp"
+        network, errors, _ = WNTREPANETNetwork.from_file(str(path))
+        assert errors is None, f"the fixture model did not parse: {errors}"
+
+        report = validate(network)
+        assert all(issue.validation_layer == "static" for issue in report)
 
 
 class TestDeclarationForms:

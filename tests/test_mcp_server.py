@@ -1,6 +1,8 @@
 """Tests for MCP server."""
 
+import importlib.util
 import json
+import os
 import pytest
 from pathlib import Path
 
@@ -11,6 +13,14 @@ try:
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
+
+# Simulation validation runs through WNTR, an optional extra. Detect it by spec
+# so the simulation test skips cleanly when the extra is absent, mirroring the
+# guard in tests/test_cli.py.
+WNTR_AVAILABLE = importlib.util.find_spec("wntr") is not None
+requires_wntr = pytest.mark.skipif(
+    not WNTR_AVAILABLE, reason="WNTR (the 'simulation' extra) is not installed"
+)
 
 # Mark as integration tests requiring MCP server binary
 pytestmark = [
@@ -32,9 +42,17 @@ class TestMCPServer:
 
     @pytest.fixture
     def server_params(self):
+        # The console script would otherwise import `epanetparser` from the
+        # editable install's site-packages path; prepend the repo root so the
+        # server under test runs this checkout.
+        repo_root = Path(__file__).resolve().parent.parent
+        env = dict(os.environ)
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(repo_root) + (os.pathsep + existing if existing else "")
         return StdioServerParameters(
             command="epanetparser-mcp",
             args=[],
+            env=env,
         )
 
     async def _call_tool(self, server_params, tool_name: str, arguments: dict):
@@ -239,6 +257,83 @@ class TestMCPServer:
         data = json.loads(result.content[0].text)
         assert "error" in data
         assert "nonexistent" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_check_inp_well_formed(self, server_params):
+        result = await self._call_tool(server_params, "check_inp", {
+            "file_path": "epanetparser/networks/core/Net1.inp",
+        })
+        payload = json.loads(result.content[0].text)
+        assert payload["well_formed"] is True
+        assert payload["issues"] == []
+
+    @pytest.mark.asyncio
+    async def test_check_inp_malformed(self, server_params):
+        result = await self._call_tool(server_params, "check_inp", {
+            "file_path": "tests/data/malformed_network.inp",
+        })
+        payload = json.loads(result.content[0].text)
+        assert payload["well_formed"] is False
+        assert len(payload["issues"]) >= 1
+        for issue in payload["issues"]:
+            assert issue["validation_layer"] == "structural"
+            assert "error_code" in issue["context"]
+            assert "line_number" in issue["context"]
+            assert "section" in issue["context"]
+
+    @pytest.mark.asyncio
+    async def test_validate_static_all_issues_are_static(self, invalid_network_path, server_params):
+        result = await self._call_tool(server_params, "validate_static", {
+            "file_path": invalid_network_path,
+        })
+        report = json.loads(result.content[0].text)
+        assert report["is_valid"] is False
+        assert len(report["issues"]) > 0
+        assert all(issue["validation_layer"] == "static" for issue in report["issues"])
+
+    @requires_wntr
+    @pytest.mark.asyncio
+    async def test_validate_simulation_reports_simulation_issues(self, server_params):
+        result = await self._call_tool(server_params, "validate_simulation", {
+            "file_path": "tests/data/simulation_failing_network.inp",
+        })
+        assert result.isError is False
+        report = json.loads(result.content[0].text)
+        sim_issues = [
+            issue for issue in report["issues"]
+            if issue["validation_layer"] == "simulation"
+        ]
+        assert len(sim_issues) >= 1
+
+    @pytest.mark.asyncio
+    async def test_validate_simulation_without_wntr_returns_actionable_error(self):
+        """The impl must fail cleanly, not with a traceback, when WNTR is absent.
+
+        A ``None`` entry in ``sys.modules`` makes ``import wntr`` raise
+        ``ImportError`` without touching the installed package, so the lazy
+        import path can be exercised deterministically in-process.
+        """
+        import sys
+
+        from epanetparser.core.mcp_server import _validate_simulation_impl
+        from mcp.types import CallToolResult
+
+        had_wntr = sys.modules.get("wntr")
+        sys.modules["wntr"] = None
+        try:
+            result = await _validate_simulation_impl(
+                file_path="epanetparser/networks/core/Net1.inp",
+            )
+        finally:
+            if had_wntr is not None:
+                sys.modules["wntr"] = had_wntr
+            else:
+                sys.modules.pop("wntr", None)
+
+        assert isinstance(result, CallToolResult)
+        assert result.isError is True
+        assert "simulation" in result.content[0].text
+        assert "pip install epanetparser[simulation]" in result.content[0].text
 
 
 if __name__ == "__main__":

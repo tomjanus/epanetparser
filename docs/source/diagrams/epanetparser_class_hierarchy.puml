@@ -3,9 +3,11 @@
 ' =====================================================================
 ' epanetparser -- class hierarchy overview
 '
-' Accurate as of the validation refactor. Validation is a separate stage
-' from parsing, and rules are plain functions rather than methods on the
-' component classes, so nothing here validates on data assignment.
+' Accurate as of the three-layer validation refactor. Validation is a
+' separate stage from parsing, and rules are plain functions rather than
+' methods on the component classes, so nothing here validates on data
+' assignment. Three layers -- structural, static and simulation -- feed
+' one ValidationReport.
 '
 ' Detail diagrams:
 '   epanetparser_model_layer.puml        components and the network
@@ -22,10 +24,12 @@ skinparam shadowing false
 hide empty members
 
 legend right
-  |<#lightblue> Parser |
+  |<#lightblue> Parser / INP reader |
+  |<#wheat> Structural layer |
   |<#lightgreen> Model base |
   |<#lightyellow> Component collections |
   |<#lavender> Validation engine |
+  |<#lightcyan> Simulation layer |
   |<#pink> Rule sets |
   |<#lightgray> Expanded in a detail diagram |
 endlegend
@@ -45,6 +49,66 @@ class WNTRJSONParser #lightblue {
   Builds a model and nothing else.
   Reports structural problems only.
   Takes no rule set argument.
+}
+
+' ---------------------------------------------------------------------
+' STAGE 1b: STRUCTURAL LAYER
+'
+' Structural failures are raised while a document is read, before any
+' network exists. They are the first of the three validation layers.
+' ---------------------------------------------------------------------
+class InpParseError #wheat {
+  + message / line_number
+  + section / error_code
+  + suggestions
+  --
+  + to_dict() -> dict
+  + to_validation_issue() -> ValidationIssue
+  --
+  Base of structural parser failures.
+  to_validation_issue() presents one as
+  an issue with validation_layer
+  "structural" and code E_PARSE_FAILED.
+}
+
+class InpSyntaxError #wheat {
+  + error_code defaults to "201"
+  --
+  Malformed section headers, wrong
+  field counts or invalid values
+  (codes 201, 202, 213).
+}
+
+class InpSemanticError #wheat {
+  + error_code defaults to "203"
+  --
+  Valid syntax but unresolved
+  references or invalid values
+  (codes 203, 205, 209, 211, 217,
+  225).
+}
+
+class InpStructuralError #wheat {
+  + error_code defaults to "204"
+  --
+  Missing required sections or
+  fundamental file problems
+  (codes 200, 204).
+}
+
+class "EPANET_ERROR_MAP\ncreate_inp_error()" as InpErrorFactory #wheat {
+  Maps an EPANET error code to the
+  matching InpParseError subclass and
+  instantiates it.
+}
+
+class read_inp_to_dict <<function>> #lightblue {
+  read_inp_to_dict(filepath) -> dict
+  --
+  Standalone INP reader (vendored
+  WNTR core.io). An InpParseError it
+  raises reaches from_file() as a
+  structural issue.
 }
 
 ' ---------------------------------------------------------------------
@@ -99,13 +163,17 @@ class NetworkIndex #lightgray {
 class Validator #lavender {
   + from_context(context) -> Validator
   + rules_for(component)
+  + simulation_rules()
   --
   + validate(network, context)
   + validate_component(component, rules)
   + validate_network(network, rules)
+  + validate_simulation(results, report)
   --
   Runs the selected rules. Returns a
   report; never raises for a rule failure.
+  validate_simulation() runs the
+  simulation layer against WNTR results.
 }
 
 class RuleSetRegistry #lavender {
@@ -122,6 +190,7 @@ class RuleSet <<frozen>> #lavender {
   --
   + component_rules: Tuple[RuleSpec, ...]
   + network_rules: Tuple[RuleSpec, ...]
+  + simulation_rules: Tuple[SimulationRuleSpec, ...]
   --
   Rules collected once at construction,
   so selecting a rule set repeatedly is
@@ -152,9 +221,15 @@ class ValidationIssue <<frozen>> #lavender {
   + code / message / severity
   + rule_id / ruleset_key
   + component_type / component_name
-  + attribute / context
+  + attribute / component_data
+  + context / category
+  + fix_suggestion
+  + validation_layer
+  + simulation_metadata
   --
-  One finding. The code is stable, so
+  One finding. validation_layer is one
+  of "structural", "static" or
+  "simulation". The code is stable, so
   downstream tooling matches on it rather
   than on message text.
 }
@@ -182,8 +257,8 @@ class epanet_core <<module>> #pink {
   __is_core__ = True
   __version__ = "1.0.0"
   --
-  35 component rules
-  9 network rules
+  119 component rules
+  33 network rules
   --
   Simulator-agnostic: required fields,
   valid types, well-formed curves, unique
@@ -202,11 +277,59 @@ class milp <<module>> #pink {
   demand model, no check valves.
 }
 
+class hydraulic <<module>> #pink {
+  __key__ = "hydraulic"
+  __is_core__ = False
+  __version__ = "1.0.0"
+  --
+  7 simulation rules
+  --
+  Post-simulation checks over WNTR
+  results: pressure, velocity,
+  headloss, flow continuity and energy.
+}
+
+' ---------------------------------------------------------------------
+' STAGE 5: SIMULATION LAYER
+'
+' Runs after a hydraulic simulation, on the results object rather than
+' the model. The last of the three validation layers.
+' ---------------------------------------------------------------------
+class SimulationRuleSpec <<frozen>> #lightcyan {
+  + rule_id / func / severity
+  + code / attribute / description
+  + category / fix_suggestion
+  + required_outputs / context
+  --
+  + is_error / is_warning
+  + issue_context() -> Dict
+  --
+  A rule over simulation results. The
+  engine skips it when the simulator
+  did not produce its required_outputs.
+}
+
+class simulation_rule <<decorator>> #lightcyan {
+  + severity / code / attribute
+  + required_outputs
+  --
+  Declares a simulation rule and
+  attaches a SimulationRuleSpec under
+  __epanetparser_simulation_rule__.
+}
+
 ' ---------------------------------------------------------------------
 ' RELATIONSHIPS
 ' ---------------------------------------------------------------------
 WNTRJSONParser ..> Components : creates
 WNTRJSONParser ..> WNTREPANETNetwork : builds
+
+read_inp_to_dict ..> InpParseError : raises
+InpErrorFactory ..> InpParseError : builds
+InpParseError <|-- InpSyntaxError : (201, 202, 213)
+InpParseError <|-- InpSemanticError : (203, 205, 209, ...)
+InpParseError <|-- InpStructuralError : (200, 204)
+InpParseError ..> ValidationIssue : to_validation_issue()
 
 WNTREPANETType <|-- Components : (8 subclasses)
 
@@ -224,27 +347,38 @@ RuleSetRegistry ..> RuleSet : discovers
 RuleSetRegistry ..> ValidationContext : resolves
 
 RuleSet *-- RuleSpec : collects
+RuleSet *-- SimulationRuleSpec : collects
 RuleSpec ..> Severity : severity
+
+Validator ..> SimulationRuleSpec : validate_simulation()
+simulation_rule ..> SimulationRuleSpec : attaches
+hydraulic ..> SimulationRuleSpec : defines
+SimulationRuleSpec ..> Severity : severity
 
 ValidationReport o-- ValidationIssue : aggregates
 ValidationIssue ..> Severity : severity
 
 epanet_core ..> RuleSet : defines
 milp ..> RuleSet : defines
+hydraulic ..> RuleSet : defines
 
 note as Flow
-  **Validation is a separate, explicit stage.**
+  **Three validation layers, one report.**
   ..
-  1. The parser builds components.
+  1. Structural: while the document is
+     read, an InpParseError is raised
+     and surfaces as a layer
+     "structural" issue.
+  2. The parser builds components.
      Assigning .data never validates
      and never raises.
-  2. component.validate() delegates to
-     the engine, holding no rule logic
-     of its own.
-  3. The registry selects rule sets from
-     the configured packages and the
-     entry point group.
-  4. The validator runs each RuleSpec.
+  3. Static: component.validate()
+     delegates to the engine, which
+     runs the selected RuleSpecs.
+  4. Simulation: validate_simulation()
+     runs SimulationRuleSpecs over
+     WNTR results, skipping rules whose
+     required_outputs are absent.
   5. AssertionError becomes a
      ValidationIssue on a
      ValidationReport.

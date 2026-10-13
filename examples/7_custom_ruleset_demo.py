@@ -161,8 +161,8 @@ def main():
         "Collecting Rules from the Module",
         "Use collect_rules() to extract rules from a module.",
     )
-    comp_rules, net_rules = collect_rules(simple_design)
-    console.print(f"   [green]✓[/green] Collected {len(comp_rules)} component rules, {len(net_rules)} network rules")
+    comp_rules, net_rules, sim_rules = collect_rules(simple_design)
+    console.print(f"   [green]✓[/green] Collected {len(comp_rules)} component rules, {len(net_rules)} network rules, {len(sim_rules)} simulation rules")
 
     table = Table(title="Collected Rules", show_header=True, header_style="bold cyan")
     table.add_column("Type", style="yellow")
@@ -265,7 +265,7 @@ def main():
     structured_module.rule_pump_curve = rule_pump_curve
 
     # Collect and inspect
-    comp_rules2, _ = collect_rules(structured_module)
+    comp_rules2, _, _ = collect_rules(structured_module)
     spec = comp_rules2[0]
     console.print(f"   Rule: {spec.rule_id}")
     console.print(f"   Code: {spec.code}")

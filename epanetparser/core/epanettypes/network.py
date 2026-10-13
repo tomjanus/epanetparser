@@ -57,7 +57,7 @@ from epanetparser.core.io.network.model import (
     CurveRegistry,
     SourceRegistry,
 )
-from epanetparser.core.io import read_inp_to_dict
+from epanetparser.core.io import InpParseError, read_inp_to_dict
 from epanetparser.core.io.epanet.io import InpFile
 from epanetparser.core.io.network.io import from_dict
 
@@ -280,12 +280,19 @@ class WNTREPANETNetwork:
         ------
         WNTREPANETParserException
             If the file cannot be read or parsed and ``raise_on_parser_error`` is True.
+        InpParseError
+            If an INP file cannot be parsed and ``raise_on_parser_error`` is True.
         """
         path = pathlib.Path(filename)
         try:
             if path.suffix.lower() == ".inp":
                 # Parse INP using standalone parser
-                wn_dict = read_inp_to_dict(path.as_posix())
+                try:
+                    wn_dict = read_inp_to_dict(path.as_posix())
+                except InpParseError as err:
+                    if raise_on_parser_error:
+                        raise
+                    return None, {"network": [err]}, None
                 network = cls.from_dict(wn_dict)
                 return network, None, None
             elif path.suffix.lower() == ".json":

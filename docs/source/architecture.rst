@@ -18,16 +18,16 @@ Pipeline
                                                      │
                           ┌──────────────────────────┼──────────────────────────┐
                           │                          │                          │
-                   structural                    static                    simulation
-                  validation                  validation                 validation
-             (parse-time, WNTR           (core + custom rule            (post-simulation,
-              reader, errors in            sets, @rule /                 @simulation_rule,
-              ValidationReport)            @network_rule)                Pandera schemas)
+                    structural                    static                    simulation
+                   validation                  validation                 validation
+              (parse-time; InpParseError    (core + custom rule          (post-simulation;
+               subclasses become             sets, @rule /                @simulation_rule,
+               layer-tagged issues)          @network_rule)               Pandera schemas)
                           │                          │                          │
                           └──────────────────────────┼──────────────────────────┘
                                                      ▼
                                               ValidationReport
-                                          (layered issues, 1.0 / 2.0 dicts)
+                                        (layered issues, schema_version "2.0")
                                                      │
                                           to_wntr() → WNTR WaterNetworkModel
                                   ──▶  simulator.run_sim() ──▶  results
@@ -35,10 +35,14 @@ Pipeline
                                           validate_simulation(results, report)
 
 The pipeline keeps parsing, validation, and simulation as separate, explicitly
-linked steps. Parsing builds a model and reports only structural problems.
-Validation runs afterwards against a chosen rule set and returns a structured
-``ValidationReport``. Simulation runs only on demand and produces its own
-post-simulation validation layer.
+linked steps. Parsing builds a model and reports only structural problems,
+raised as ``InpParseError`` subclasses and presented as
+``validation_layer="structural"`` issues. Static validation runs afterwards
+against a chosen rule set and returns a structured ``ValidationReport``.
+Simulation runs only on demand and produces its own post-simulation validation
+layer. All three layers append to one report; the class-level view is in
+:doc:`hierarchy` and the layer-by-layer detail, including the error taxonomies
+and CLI switches, is in :doc:`validation_layers`.
 
 Modules
 -------
@@ -48,6 +52,8 @@ Module                  Responsibility
 ======================  =====================================================
 ``core.io``             Vendored WNTR 1.4.0 parsing/serialisation code plus
                         the standalone INP parser. See :doc:`parser`.
+``core.io.inp_errors``  Structured ``InpParseError`` subclasses, the EPANET
+                        code map and their ``ValidationIssue`` mapping.
 ``core.parsers``        WNTR JSON parser (structural only).
 ``core.epanettypes``    ``WNTREPANETNetwork`` and component wrappers with
                         read-only accessors over the parsed dictionaries.
@@ -68,7 +74,9 @@ Key design decisions
   extra for hydraulic simulation.
 * **Three validation layers.** Structural, static, and simulated results
   converge into a single ``ValidationReport`` so consumers see one unified
-  result. See :doc:`validation_layers`.
+  result. Structural failures use the ``InpParseError`` tree, static rules use
+  ``@rule``/``@network_rule``, and simulation rules use ``@simulation_rule``.
+  See :doc:`validation_layers` and :doc:`hierarchy`.
 * **Dict serialisation is canonical.** Both parsers produce plain Python
   dictionaries in the WNTR SI schema; the network wrappers are read-only views
   over those dictionaries. See :doc:`parser`.

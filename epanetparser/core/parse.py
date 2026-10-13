@@ -104,22 +104,24 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional, Sequence
 from rich_argparse import RichHelpFormatter
 from rich import print as rprint
 
 from epanetparser.core import __version__, console
 from epanetparser.core.display import results_as_json, write_results
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+from epanetparser.core.io import InpParseError
 from epanetparser.core.lib.converter import WNTRINPJSONConverter
-from epanetparser.core.toon import encode_validation_report
 from epanetparser.core.utils import sha256digest
 from epanetparser.core.download import download_networks
 from epanetparser.core.environment import PackageResolver
 from epanetparser.core.validation import (
     RuleSetRegistry,
     RuleSetSelectionError,
+    Severity,
     ValidationContext,
+    ValidationIssue,
     ValidationReport,
     Validator,
 )
@@ -360,6 +362,46 @@ def handle_download(args: argparse.Namespace) -> None:
         quiet=args.quiet)
 
 
+def _structural_issues(
+    errors: Optional[Dict[str, Sequence[Any]]],
+) -> Dict[str, Any]:
+    """Normalise parser errors into layer-tagged structural issues.
+
+    Args:
+        errors: Mapping of component to parser problems, as returned by
+            ``WNTREPANETNetwork.from_file`` when a document cannot be parsed.
+
+    Returns:
+        A mapping of component to lists of
+        :class:`~epanetparser.core.validation.results.ValidationIssue` tagged
+        with ``validation_layer="structural"``. An ``InpParseError`` is
+        converted through its own ``to_validation_issue``; any other parser
+        error is turned into an equivalent issue here, so the output shape
+        does not depend on which parser rejected the document.
+    """
+    normalized: Dict[str, List[ValidationIssue]] = {}
+    for component, findings in (errors or {}).items():
+        issues: List[ValidationIssue] = []
+        for finding in findings:
+            if isinstance(finding, InpParseError):
+                issues.append(finding.to_validation_issue())
+            else:
+                issues.append(
+                    ValidationIssue(
+                        code="E_PARSE_FAILED",
+                        message=str(finding),
+                        severity=Severity.ERROR,
+                        rule_id="parse",
+                        ruleset_key="parser",
+                        component_type="network",
+                        validation_layer="structural",
+                        context={"exception_type": type(finding).__name__},
+                    )
+                )
+        normalized[component] = issues
+    return normalized
+
+
 def handle_validate(args: argparse.Namespace) -> None:
     """Handle the 'validate' command for validating an EPANET model.
 
@@ -380,7 +422,11 @@ def handle_validate(args: argparse.Namespace) -> None:
     raise_warning = args.raise_on_warning
     useemoji = not args.no_emoji if not args.no_colour else False
     include_digest = not args.no_digest
-    context = _build_context(args.rulesets)
+    # The static context is only needed when the static layer actually runs.
+    # Under --simulation-only the caller asked for the simulation layer alone,
+    # so a custom --ruleset is ignored and must not be validated, nor allowed
+    # to sys.exit, for a layer that will not run.
+    context = None if args.simulation_only else _build_context(args.rulesets)
 
     if args.list_rulesets:
         rprint(RuleSetRegistry().describe())
@@ -412,44 +458,41 @@ def handle_validate(args: argparse.Namespace) -> None:
         # fine. Exiting 1 rather than 2: 2 would mean the model was parsed and
         # found invalid, and this is not that.
         if use_toon:
-            _print_json(encode_validation_report({
-                "is_valid": False,
-                "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
-                "issues": [{
-                    "code": "E_PARSE_FAILED",
-                    "message": str(errors.get("network", ["Unknown parse error"])[0]),
-                    "severity": "ERROR",
-                    "rule_id": "parse",
-                    "ruleset_key": "parser",
-                    "component_type": "network",
-                    "component_name": None,
-                    "attribute": None,
-                    "component_data": {},
-                    "context": {},
-                }]
-            }))
+            report = ValidationReport(
+                issue
+                for findings in _structural_issues(errors).values()
+                for issue in findings
+            )
+            _print_json(report.as_toon())
         elif use_json:
             _print_json(
                 results_as_json(
-                    filename, errors, warnings, include_digest=include_digest
+                    filename,
+                    _structural_issues(errors),
+                    warnings,
+                    include_digest=include_digest,
                 )
             )
         else:
             write_results(filename, errors or {}, warnings, use_emoji=useemoji)
         sys.exit(1)
 
-    try:
-        report = network.validate(context)
-    except RuleSetSelectionError as exc:
-        rprint(f"[red]Error:[/red] {exc}", file=sys.stderr)
-        sys.exit(1)
+    if args.simulation_only:
+        # The caller asked for the simulation layer alone, so the static rules
+        # must not run: only simulation findings belong in the report. The
+        # network is still parsed above, because the simulation needs it.
+        report = ValidationReport([])
+    else:
+        # The static layer runs, so the context was built above.
+        assert context is not None
+        try:
+            report = network.validate(context)
+        except RuleSetSelectionError as exc:
+            rprint(f"[red]Error:[/red] {exc}", file=sys.stderr)
+            sys.exit(1)
 
     # Simulation validation
     if args.simulate or args.simulation_only:
-        if not args.simulation_only:
-            # Static validation already done, now run simulation
-            pass
-        
         # Build simulation context with simulation rulesets
         sim_context = _build_simulation_context(args.simulation_rulesets)
         
@@ -530,10 +573,19 @@ def _build_simulation_context(simulation_rulesets) -> ValidationContext:
 
     Raises:
         SystemExit: Exits with code 1 if a key is not a discovered ruleset.
+
+    Notes:
+        When ``simulation_rulesets`` is empty or None, the reference
+        ``hydraulic`` ruleset is selected, matching the MCP tool's default.
+        Selecting the simulation layer without an explicit ruleset must still
+        validate something, otherwise the report is empty and every network
+        would appear valid.
     """
     # For simulation validation, we still need the core ruleset for the network
     # but we also include the simulation rulesets as custom
-    context = ValidationContext(custom=tuple(simulation_rulesets or ()))
+    context = ValidationContext(
+        custom=tuple(simulation_rulesets or ("hydraulic",))
+    )
     registry = context.registry
     available = registry.keys()
     for key in context.custom:

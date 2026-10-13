@@ -115,7 +115,7 @@ def demo_cli_usage():
 
     print("\nCommand: epanetparser validate -f valid_network.json --toon-output")
     result = subprocess.run(
-        ["python", "-m", "epanetparser.core.parse", "validate", "-f", str(valid_path), "--toon-output"],
+        [sys.executable, "-m", "epanetparser.core.parse", "validate", "-f", str(valid_path), "--toon-output"],
         capture_output=True,
         text=True,
         cwd=project_root,
@@ -125,7 +125,7 @@ def demo_cli_usage():
 
     print("\nCommand: epanetparser validate -f invalid_network.json --toon-output --ruleset milp")
     result = subprocess.run(
-        ["python", "-m", "epanetparser.core.parse", "validate", "-f", str(invalid_path), "--toon-output", "--ruleset", "milp"],
+        [sys.executable, "-m", "epanetparser.core.parse", "validate", "-f", str(invalid_path), "--toon-output", "--ruleset", "milp"],
         capture_output=True,
         text=True,
         cwd=project_root,

@@ -73,12 +73,54 @@ VS Code (``settings.json``)
       }
     }
 
+Claude Code (``.mcp.json`` / ``claude mcp add``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Project scope (``.mcp.json`` at repo root):**
+
+.. code-block:: json
+
+    {
+      "mcpServers": {
+        "epanetparser": {
+          "command": "epanetparser-mcp",
+          "args": []
+        }
+      }
+    }
+
+**CLI equivalent:**
+
+.. code-block:: console
+
+    claude mcp add --transport stdio epanetparser -- epanetparser-mcp
+
+Note: default scope is local; add ``--scope project`` to write ``.mcp.json``, or ``--scope user`` for all projects. A stdio entry has no ``type`` field (or ``"type": "stdio"``). Project-scoped ``.mcp.json`` servers require interactive approval via ``claude`` (or ``claude mcp reset-project-choices`` to reset), and ``claude mcp list`` shows connection status.
+
+OpenCode (``opencode.json``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: json
+
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "epanetparser": {
+          "type": "local",
+          "command": ["epanetparser-mcp"],
+          "enabled": true
+        }
+      }
+    }
+
+Note: For a local server the required fields are ``type: "local"`` and ``command`` (an array of command + args); optional ``enabled``, ``environment``, ``cwd``, ``timeout``. Tools are exposed to the model; reference them by server name in a prompt.
+
 After configuration, restart your MCP client to connect to the server.
 
 Available Tools
 ---------------
 
-The server exposes 5 tools:
+The server exposes 8 tools:
 
 1. validate_network
 ^^^^^^^^^^^^^^^^^^^
@@ -393,6 +435,213 @@ Get detailed information about a specific ruleset, including all its rules.
       ]
     }
 
+6. check_inp
+^^^^^^^^^^^^
+
+Check an EPANET INP file for structural well-formedness. The structural layer
+reports parser problems without building or validating a model. Malformed INP
+files never raise: they come back as ``well_formed: false`` with each parser
+problem mapped to a ``ValidationIssue`` tagged ``validation_layer:
+"structural"``.
+
+**Parameters**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - Yes
+     - Path to the .inp file
+
+**Returns:** ``well_formed`` flag, the given ``file_path``, and the parser
+issues (empty when well formed).
+
+**Example Response (well formed)**
+
+.. code-block:: json
+
+    {
+      "well_formed": true,
+      "file_path": "Net1.inp",
+      "issues": []
+    }
+
+**Example Response (malformed)**
+
+.. code-block:: json
+
+    {
+      "well_formed": false,
+      "file_path": "broken.inp",
+      "issues": [
+        {
+          "code": "E_PARSE_FAILED",
+          "message": "Invalid numeric value 'notanumber' for elevation",
+          "severity": "ERROR",
+          "rule_id": "parse",
+          "ruleset_key": "parser",
+          "component_type": "network",
+          "component_name": null,
+          "attribute": null,
+          "component_data": {},
+          "context": {
+            "error_code": "202",
+            "line_number": 7,
+            "section": "[JUNCTIONS]",
+            "suggestions": ["Check that the value is a valid number"],
+            "exception_type": "InpSyntaxError"
+          },
+          "category": "",
+          "fix_suggestion": "Check that the value is a valid number",
+          "validation_layer": "structural",
+          "simulation_metadata": {}
+        }
+      ]
+    }
+
+7. validate_static
+^^^^^^^^^^^^^^^^^^
+
+Validate an EPANET network model at the static layer: the rule-based checks
+that need no simulation. The behaviour mirrors ``validate_network``, and every
+reported issue is tagged ``validation_layer: "static"``.
+
+**Parameters**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - No*
+     - Path to .inp or .json file
+   * - ``json_content``
+     - string
+     - No*
+     - Raw JSON string of WNTR network model
+   * - ``rulesets``
+     - array[string]
+     - No
+     - Custom ruleset keys (e.g., ``["milp"]``)
+   * - ``output_format``
+     - string
+     - No
+     - ``"json"`` or ``"toon"`` (default: ``"json"``)
+
+\*Provide exactly one of ``file_path`` or ``json_content``.
+
+**Returns:** ValidationReport as JSON string or TOON string, with every issue
+at the static layer.
+
+**Example Response**
+
+.. code-block:: json
+
+    {
+      "is_valid": false,
+      "counts": {"ERROR": 2, "WARNING": 1, "INFO": 0},
+      "issues": [
+        {
+          "code": "E_MILP_TIMESTEP",
+          "message": "Simulation timestep 7200 seconds not equal to MILOPS timestep 3600 seconds",
+          "severity": "ERROR",
+          "rule_id": "rule_hydraulic_timestep",
+          "ruleset_key": "milp",
+          "validation_layer": "static"
+        }
+      ]
+    }
+
+8. validate_simulation
+^^^^^^^^^^^^^^^^^^^^^^
+
+Validate an EPANET network model at the simulation layer. Runs the static
+rules first, then simulates the model with WNTR and applies the requested
+simulation rulesets to the results. Simulation findings are tagged
+``validation_layer: "simulation"`` and reported alongside the static ones.
+
+This tool requires the optional ``simulation`` extra. When WNTR is not
+installed it returns an ``isError`` result with an actionable install message
+instead of a traceback.
+
+**Parameters**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - No*
+     - Path to .inp or .json file
+   * - ``json_content``
+     - string
+     - No*
+     - Raw JSON string of WNTR network model
+   * - ``simulation_rulesets``
+     - array[string]
+     - No
+     - Simulation ruleset keys (default: ``["hydraulic"]``)
+   * - ``rulesets``
+     - array[string]
+     - No
+     - Custom ruleset keys for the static layer (e.g., ``["milp"]``)
+   * - ``output_format``
+     - string
+     - No
+     - ``"json"`` or ``"toon"`` (default: ``"json"``)
+
+\*Provide exactly one of ``file_path`` or ``json_content``.
+
+**Returns:** The combined static + simulation ValidationReport. Simulation
+issues carry ``validation_layer: "simulation"``.
+
+**Example Response**
+
+.. code-block:: json
+
+    {
+      "is_valid": false,
+      "counts": {"ERROR": 2, "WARNING": 1, "INFO": 0},
+      "issues": [
+        {
+          "code": "E_MINIMUM_PRESSURE",
+          "message": "Minimum pressure -12.7 psi below required 20.0 psi",
+          "severity": "ERROR",
+          "rule_id": "rule_minimum_pressure",
+          "ruleset_key": "hydraulic",
+          "component_type": "simulation",
+          "attribute": "pressure",
+          "validation_layer": "simulation",
+          "simulation_metadata": {
+            "required_outputs": ["node.pressure"]
+          }
+        }
+      ]
+    }
+
+**Example Error (WNTR not installed)**
+
+.. code-block:: text
+
+    Simulation validation requires the optional 'simulation' extra. Install
+    with: pip install epanetparser[simulation]
+
 Error Handling
 --------------
 
@@ -454,7 +703,7 @@ official Python ``mcp`` SDK. It uses the stdio transport (``stdio_server``)
 which communicates over standard input/output with line-delimited JSON-RPC 2.0
 messages.
 
-The server registers 5 tools at startup and handles ``call_tool`` requests by
+The server registers 8 tools at startup and handles ``call_tool`` requests by
 dispatching to the appropriate implementation function. Each implementation
 function:
 

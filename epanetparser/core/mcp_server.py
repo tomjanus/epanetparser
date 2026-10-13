@@ -11,7 +11,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 # Disable logging before importing epanetparser to avoid stdout pollution
 # which breaks the JSON-RPC protocol over stdio
@@ -49,10 +49,13 @@ except ImportError:  # pragma: no cover - wntr is an optional extra
 
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.epanettypes.exceptions import WNTREPANETParserException
+from epanetparser.core.io import read_inp_to_dict
+from epanetparser.core.io.inp_errors import InpParseError
 from epanetparser.core.lib.converter import WNTRINPJSONConverter
 from epanetparser.core.validation import (
     RuleSetRegistry,
     ValidationContext,
+    Validator,
     validate,
 )
 
@@ -125,6 +128,130 @@ async def _validate_network_impl(
 
     context = ValidationContext(custom=tuple(rulesets or ()))
     report = validate(network, context)
+
+    if output_format == "toon":
+        return [TextContent(type="text", text=report.as_toon())]
+    return [TextContent(type="text", text=json.dumps(report.as_dict(), indent=2))]
+
+
+async def _check_inp_impl(file_path: str) -> List[TextContent]:
+    """Check an EPANET INP file for structural well-formedness.
+
+    The structural layer is about the document, not the model: a malformed
+    INP never produces a network, so this tool reports parser problems
+    without attempting to build or validate one.
+    """
+    try:
+        read_inp_to_dict(Path(file_path))
+    except InpParseError as err:
+        issue = err.to_validation_issue()
+        return [TextContent(type="text", text=json.dumps({
+            "well_formed": False,
+            "file_path": file_path,
+            "issues": [issue.as_dict()],
+        }, indent=2))]
+    return [TextContent(type="text", text=json.dumps({
+        "well_formed": True,
+        "file_path": file_path,
+        "issues": [],
+    }, indent=2))]
+
+
+async def _validate_static_impl(
+    file_path: Optional[str] = None,
+    json_content: Optional[str] = None,
+    rulesets: Optional[List[str]] = None,
+    output_format: str = "json",
+) -> List[TextContent]:
+    """Validate an EPANET network model at the static layer."""
+    result = await _validate_network_impl(
+        file_path=file_path,
+        json_content=json_content,
+        rulesets=rulesets,
+        output_format=output_format,
+    )
+    # Every issue from this tool belongs to the static layer. The delegation
+    # above already tags rule findings ``static`` (the default), but the
+    # load-failure branch constructs its issue by hand; normalise it too so
+    # callers can always rely on the layer being present.
+    text = result[0].text
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return result
+    for issue in payload.get("issues", []):
+        issue.setdefault("validation_layer", "static")
+    return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+
+
+async def _validate_simulation_impl(
+    file_path: Optional[str] = None,
+    json_content: Optional[str] = None,
+    simulation_rulesets: Optional[List[str]] = None,
+    rulesets: Optional[List[str]] = None,
+    output_format: str = "json",
+) -> Union[List[TextContent], CallToolResult]:
+    """Validate an EPANET network model at the simulation layer.
+
+    Runs the static rules first, then simulates the model with WNTR and
+    applies the requested simulation rulesets to the results. WNTR is an
+    optional dependency, so it is imported lazily here: layers 1 and 2 must
+    work without it, and only this tool needs it.
+    """
+    try:
+        import wntr  # type: ignore[import-untyped]
+    except ImportError:
+        return CallToolResult(
+            content=[TextContent(
+                type="text",
+                text=(
+                    "Simulation validation requires the optional 'simulation' "
+                    "extra. Install with: pip install epanetparser[simulation]"
+                ),
+            )],
+            isError=True,
+        )
+
+    network, error = _load_network(file_path, json_content)
+    if error:
+        return [TextContent(type="text", text=json.dumps({
+            "is_valid": False,
+            "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
+            "issues": [{
+                "code": "E_LOAD_FAILED",
+                "message": error,
+                "severity": "ERROR",
+                "rule_id": "load",
+                "ruleset_key": "parser",
+                "component_type": "network",
+                "component_name": None,
+                "attribute": None,
+                "component_data": {},
+                "context": {},
+                "validation_layer": "static",
+            }]
+        }))]
+    assert network is not None, "loading reported no error yet returned no network"
+
+    try:
+        static_context = ValidationContext(custom=tuple(rulesets or ()))
+        report = validate(network, static_context)
+
+        simulation_context = ValidationContext(
+            custom=tuple(simulation_rulesets or ["hydraulic"])
+        )
+        model = network.to_wntr()
+        results = wntr.sim.EpanetSimulator(model).run_sim()
+        validator = Validator.from_context(simulation_context)
+        report = validator.validate_simulation(results, report)
+    except Exception as exc:
+        return CallToolResult(
+            content=[TextContent(
+                type="text",
+                text=f"Simulation validation failed: {exc}",
+            )],
+            isError=True,
+        )
 
     if output_format == "toon":
         return [TextContent(type="text", text=report.as_toon())]
@@ -357,6 +484,44 @@ TOOLS = [
             "required": ["ruleset_key"],
         },
     ),
+    Tool(
+        name="check_inp",
+        description="Check an EPANET INP file for structural well-formedness",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to the .inp file"},
+            },
+            "required": ["file_path"],
+        },
+    ),
+    Tool(
+        name="validate_static",
+        description="Validate an EPANET network model at the static layer (rule-based checks that need no simulation)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to .inp or .json file"},
+                "json_content": {"type": "string", "description": "Raw JSON string of WNTR network model"},
+                "rulesets": {"type": "array", "items": {"type": "string"}, "description": "Custom ruleset keys (e.g., [\"milp\"])"},
+                "output_format": {"type": "string", "enum": ["json", "toon"], "default": "json", "description": "Output format"},
+            },
+        },
+    ),
+    Tool(
+        name="validate_simulation",
+        description="Validate an EPANET network model at the simulation layer (runs a WNTR hydraulic simulation; requires the optional 'simulation' extra)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to .inp or .json file"},
+                "json_content": {"type": "string", "description": "Raw JSON string of WNTR network model"},
+                "simulation_rulesets": {"type": "array", "items": {"type": "string"}, "default": ["hydraulic"], "description": "Simulation ruleset keys (e.g., [\"hydraulic\"])"},
+                "rulesets": {"type": "array", "items": {"type": "string"}, "description": "Custom ruleset keys for the static layer (e.g., [\"milp\"])"},
+                "output_format": {"type": "string", "enum": ["json", "toon"], "default": "json", "description": "Output format"},
+            },
+        },
+    ),
 ]
 
 
@@ -394,6 +559,26 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 ruleset_key=arguments["ruleset_key"],
                 component_type=arguments.get("component_type"),
             )
+        elif name == "check_inp":
+            result = await _check_inp_impl(file_path=arguments["file_path"])
+        elif name == "validate_static":
+            result = await _validate_static_impl(
+                file_path=arguments.get("file_path"),
+                json_content=arguments.get("json_content"),
+                rulesets=arguments.get("rulesets"),
+                output_format=arguments.get("output_format", "json"),
+            )
+        elif name == "validate_simulation":
+            sim_result = await _validate_simulation_impl(
+                file_path=arguments.get("file_path"),
+                json_content=arguments.get("json_content"),
+                simulation_rulesets=arguments.get("simulation_rulesets", ["hydraulic"]),
+                rulesets=arguments.get("rulesets"),
+                output_format=arguments.get("output_format", "json"),
+            )
+            if isinstance(sim_result, CallToolResult):
+                return sim_result
+            result = sim_result
         else:
             return CallToolResult(
                 content=[TextContent(type="text", text=f"Unknown tool: {name}")],

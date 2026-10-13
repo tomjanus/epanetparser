@@ -6,6 +6,21 @@ its structure or static configuration. ``epanetparser`` runs a WNTR/EPANET
 simulation on demand and validates the results with a dedicated layer of
 rules.
 
+This is the third of the three validation layers described in
+:doc:`validation_layers`: structural checks run while the document is read,
+static checks run on the parsed model, and simulation checks run last, on the
+WNTR results object. All three append to the same
+:class:`~epanetparser.core.validation.results.ValidationReport`, tagging every
+issue with a ``validation_layer``.
+
+When it runs
+------------
+
+The layer runs only when simulation validation is requested — via the CLI or
+programmatically. It runs after a hydraulic simulation has produced WNTR
+results, not against the model, so a network can pass static validation and
+still fail here.
+
 Requirements
 ------------
 
@@ -62,7 +77,9 @@ dtype, or contains non-finite values.
 Running simulation validation
 -----------------------------
 
-:doc:`usage` describes the flags. The three relevant CLI switches are:
+:doc:`validation_layers` describes all three layers and the full set of CLI
+switches; :doc:`usage` is the flag reference. The three switches relevant here
+are:
 
 .. code-block:: console
 
@@ -73,6 +90,10 @@ Running simulation validation
     # Only the simulation validation (skip static rules)
     $ epanetparser validate -f model.inp --simulation-only \
         --simulation-ruleset hydraulic
+
+``--simulate`` runs the static rules first and then adds the simulation layer;
+``--simulation-only`` skips the static rules; ``--simulation-ruleset`` selects
+which simulation rule sets to run and may be repeated.
 
 Programming interface
 ---------------------
@@ -101,7 +122,11 @@ Programming interface
 Result metadata
 ---------------
 
-Simulation issues carry context in ``issue.simulation_metadata`` (for
-example the timestep or value that triggered the rule) and their
-``validation_layer`` is ``"simulation"``, so they can be filtered separately
-in the unified :class:`~epanetparser.core.validation.results.ValidationReport`.
+Simulation issues have ``validation_layer`` set to ``"simulation"``, so they
+can be filtered separately in the unified
+:class:`~epanetparser.core.validation.results.ValidationReport`. Their
+``simulation_metadata`` records the rule's ``required_outputs`` (the outputs
+the engine checked before running it), and their ``context`` carries the
+rule's static context, such as its ruleset. Together these let downstream
+consumers tell a simulation finding from a static one and know which outputs
+it depended on.

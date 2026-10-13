@@ -1,0 +1,20 @@
+[TITLE]
+Malformed network for testing structural layer
+
+[JUNCTIONS]
+;ID Elev Demand
+1  notanumber  0
+
+[RESERVOIRS]
+2  100
+
+[PIPES]
+1 1 2 100 50 0 0 OPEN
+
+[TIMES]
+Duration 0
+
+[REPORT]
+Status No
+
+[END]

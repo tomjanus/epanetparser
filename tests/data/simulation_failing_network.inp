@@ -1,0 +1,28 @@
+[TITLE]
+Simulation failing network - minimum pressure violation
+
+[JUNCTIONS]
+;ID Elev Demand Pattern
+1  120  100  ;
+
+[RESERVOIRS]
+;ID Head
+2  80  ;
+
+[PIPES]
+;ID Node1 Node2 Length Diam Roughness
+1  2 1  1000  6  100  ;
+
+[TIMES]
+Duration 0
+
+[REPORT]
+Status No
+Nodes All
+Links All
+
+[OPTIONS]
+Units GPM
+Headloss H-W
+
+[END]

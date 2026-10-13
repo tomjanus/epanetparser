@@ -5,6 +5,8 @@
 '
 ' Everything in epanetparser.core.validation. The model layer
 ' (epanetparser_model_layer.puml) calls into this and holds none of it.
+' The engine runs the static layer on the model and, after a hydraulic
+' simulation, the simulation layer on the WNTR results object.
 '
 ' A rule failure never raises. A rule that raises anything other than
 ' AssertionError is itself defective and raises RuleExecutionError
@@ -23,6 +25,7 @@ hide empty members
 legend right
   |<#lavender> Selection |
   |<#lightblue> Execution |
+  |<#lightcyan> Simulation |
   |<#lightyellow> Results |
   |<#pink> Errors |
 endlegend
@@ -62,6 +65,7 @@ class RuleSet <<frozen>> #lavender {
   --
   + component_rules: Tuple[RuleSpec, ...]
   + network_rules: Tuple[RuleSpec, ...]
+  + simulation_rules: Tuple[SimulationRuleSpec, ...]
   --
   Built from a module's __key__,
   __ruleset_name__, __version__,
@@ -94,16 +98,19 @@ class Validator #lavender {
   + ruleset_keys() -> Tuple[str, ...]
   + from_context(context) -> Validator
   + rules_for(component) -> List
+  + simulation_rules() -> List
   --
   + validate(network, context)
   + validate_component(component, rules)
   + validate_network(network, rules)
+  + validate_simulation(results, report)
   --
   Holds the selected rule sets. A
   Validator is cached per context, so
   equal contexts reuse one instance
   rather than rescanning rule sets for
-  every component.
+  every component. validate_simulation()
+  is the simulation layer.
 }
 
 ' ---------------------------------------------------------------------
@@ -140,6 +147,52 @@ note as Order
 end note
 
 ' ---------------------------------------------------------------------
+' SIMULATION (the third validation layer)
+' ---------------------------------------------------------------------
+class SimulationRuleSpec <<frozen>> #lightcyan {
+  + rule_id: str
+  + func: Callable[[Any], None]
+  + severity: Severity
+  + code / attribute
+  + description / category
+  + fix_suggestion
+  + required_outputs: Tuple[str, ...]
+  + context: Dict[str, Any]
+  --
+  + is_error() / is_warning()
+  + issue_context() -> Dict
+  --
+  A rule over simulation results rather
+  than the model. The engine skips it
+  when the simulator did not produce
+  every required_output.
+}
+
+class simulation_rule <<decorator>> #lightcyan {
+  + severity / code / attribute
+  + required_outputs
+  --
+  Declares a simulation rule and
+  attaches a SimulationRuleSpec under
+  __epanetparser_simulation_rule__.
+  Combine with @described for the
+  description.
+}
+
+note as SimOrder
+  **A fourth pass, on results.**
+  ..
+  validate_simulation(results, report)
+  runs the selected SimulationRuleSpecs
+  against the WNTR results object and
+  appends to the same report, tagging
+  each issue validation_layer
+  "simulation". A rule whose
+  required_outputs are absent is
+  skipped, not failed.
+end note
+
+' ---------------------------------------------------------------------
 ' RESULTS
 ' ---------------------------------------------------------------------
 class ValidationReport #lightyellow {
@@ -169,8 +222,12 @@ class ValidationIssue <<frozen>> #lightyellow {
   + rule_id: str
   + ruleset_key: str
   + component_type / component_name
-  + attribute
+  + attribute / component_data
   + context: Dict[str, Any]
+  + category: str
+  + fix_suggestion: str
+  + validation_layer: str = "static"
+  + simulation_metadata: Dict[str, Any]
   --
   + is_error() / is_warning() / is_info()
   + as_dict() -> Dict
@@ -178,7 +235,10 @@ class ValidationIssue <<frozen>> #lightyellow {
   One finding. The code is part of the
   public API, so downstream tooling
   matches on it rather than on
-  message text.
+  message text. validation_layer
+  records which of the three layers
+  produced it; simulation_metadata
+  carries post-simulation context.
 }
 
 enum Severity #lightyellow {
@@ -221,18 +281,24 @@ class RuleSetSelectionError #pink {
 ValidationContext ..> RuleSetRegistry : resolved by
 RuleSetRegistry ..> RuleSet : discovers
 RuleSet *-- RuleSpec : collects
+RuleSet *-- SimulationRuleSpec : collects
 
 Validator ..> RuleSet : holds
 Validator ..> ValidationContext : from_context
 Validator ..> RuleSpec : runs
+Validator ..> SimulationRuleSpec : validate_simulation()
 Validator ..> NetworkIndex : builds
 Validator ..> ValidationReport : returns
 
 RuleSpec ..> Severity : severity
+SimulationRuleSpec ..> Severity : severity
+simulation_rule ..> SimulationRuleSpec : attaches
+
 ValidationReport o-- ValidationIssue : aggregates
 ValidationIssue ..> Severity : severity
 
 Validator ..> Order
+Validator ..> SimOrder
 Validator ..> RuleExecutionError : raises
 RuleSpec <|-- RuleViolation : signals via
 RuleSetRegistry ..> RuleSetSelectionError : raises

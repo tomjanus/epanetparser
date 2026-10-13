@@ -402,9 +402,10 @@ def rule_energy_demand_charge(options) -> None:
     fix : Set energy demand charge to a non-negative value.
     """
     energy_opts = options.energy_options or {}
-    charge = energy_opts.get("demand_charge", 0)
-    assert charge >= 0, \
-        f"Demand charge must be >= 0, got {charge}"
+    charge = energy_opts.get("demand_charge")
+    if charge is not None:
+        assert charge >= 0, \
+            f"Energy demand charge must be >= 0, got {charge}"
 
 
 @rule(OPTIONS, code="E_REACTIONS_BULK_ORDER", attribute="bulk_order")

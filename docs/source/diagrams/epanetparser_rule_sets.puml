@@ -35,8 +35,8 @@ package "Rule set modules" as RuleSetModules #lightyellow {
     __version__ = "1.0.0"
     __is_core__ = True
     --
-    35 component rules
-    9 network rules
+    119 component rules
+    33 network rules
     --
     Simulator-agnostic checks that a model
     is a well-formed EPANET model:
@@ -62,6 +62,23 @@ package "Rule set modules" as RuleSetModules #lightyellow {
     valves, tank volume curves, tank
     overflow, emitters or controls.
   }
+
+  class hydraulic <<module>> #lightblue {
+    __key__ = "hydraulic"
+    __ruleset_name__ = "Hydraulic Simulation Validation"
+    __version__ = "1.0.0"
+    __is_core__ = False
+    --
+    7 simulation rules
+    --
+    Post-simulation checks over WNTR
+    results: minimum and maximum pressure,
+    maximum velocity, headloss gradient,
+    flow continuity and energy balance.
+    Unlike the sets above, its rules run
+    on the simulation results, not the
+    model.
+  }
 }
 
 ' ---------------------------------------------------------------------
@@ -82,6 +99,16 @@ package "Authoring helpers" as Helpers #lightyellow {
     As rule(), but the function receives
     the model as a whole and its RuleSpec
     carries component_type = None.
+  }
+
+  class simulation_rule <<decorator>> #lightyellow {
+    + severity / code / attribute
+    + required_outputs
+    --
+    As rule(), but the function receives
+    the simulation results and its spec
+    is a SimulationRuleSpec. Used by the
+    hydraulic rule set.
   }
 
   class match <<decorator>> #lightyellow {
@@ -150,6 +177,7 @@ WNTREPANETParserException <|-- Exceptions : three error types
 WNTREPANETParserWarning <|-- Exceptions : one warning type
 
 Helpers ..> Helpers : @match below @rule, @network_rule
+hydraulic ..> simulation_rule : authored with
 
 
 

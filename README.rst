@@ -36,6 +36,124 @@ using a standalone INP parser (a vendored copy of WNTR 1.4.0's parsing code in
 `epanetparser.core.io`), which does not require WNTR to be installed. WNTR is only
 required for hydraulic simulation via the optional ``[simulation]`` extra.
 
+Validation at three layers
+--------------------------
+
+``epanetparser`` validates a network at three independent points, and every
+result converges into a single ``ValidationReport``. Each layer answers a
+different question, and every issue is tagged with a ``validation_layer``
+(``"structural"``, ``"static"`` or ``"simulation"``) so the layers can be told
+apart even when they are reported together.
+
+.. image:: assets/three_layer_overview.png
+   :alt: The three validation layers converging into one ValidationReport
+   :width: 100%
+   :align: center
+
+.. list-table::
+   :widths: 16 30 54
+   :header-rows: 1
+
+   * - Layer
+     - When it runs
+     - What it checks
+   * - Structural
+     - While the input document is read
+     - Well-formed EPANET: section headers, field counts, parseable numeric
+       values and references that resolve. Failures are ``InpParseError``
+       subclasses (for example ``InpSyntaxError``, EPANET code 201).
+   * - Static
+     - After the ``WNTREPANETNetwork`` is built
+     - Simulator-agnostic rules: the core ``epanet_core`` rule set plus any
+       custom rule sets, over the model graph, parameters, units and
+       configuration. Rules use ``@rule`` and ``@network_rule``.
+   * - Simulation
+     - After a hydraulic simulation
+     - Post-simulation output: pressures, flows, velocities, headloss and the
+       result tables. Rules use ``@simulation_rule``, and
+       ``custom_rules.pandera_schemas`` checks result tables against Pandera
+       schemas.
+
+Layer 1: structural
+~~~~~~~~~~~~~~~~~~~
+
+*Can the file be read at all?* The parser rejects the document before a model
+exists. A malformed value in ``tests/data/malformed_network.inp`` stops the
+parse:
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/malformed_network.inp --no-digest
+
+.. image:: assets/layer1_structural.png
+   :alt: Structural layer rejects a malformed INP file
+   :width: 100%
+
+**Exit status 1.** One structural error is reported (``could not convert string
+to float: 'notanumber'``, EPANET error code 202) and no static rule runs,
+because there is no model to validate. Pass ``--raise-on-error`` to receive the
+``InpParseError`` as an exception instead.
+
+Layer 2: static
+~~~~~~~~~~~~~~~
+
+*Is the model a sound EPANET model?* Once the ``WNTREPANETNetwork`` exists, the
+core rule set and any custom rule sets run against it, with no simulator
+involved:
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/invalid_network.json --verbose --no-digest
+
+.. image:: assets/layer2_static.png
+   :alt: Static layer reports errors with fix suggestions
+   :width: 100%
+
+**Exit status 2.** The model parses, so it is statically tested: the report
+holds 2 errors and 86 warnings (the image shows the first few). The
+``E_CURVE_TYPE_UNSUPPORTED`` finding carries its rule, category and a fix
+suggestion. Add ``--ignore-warnings`` to see just the two errors.
+
+The same layer from Python:
+
+.. code-block:: python
+
+    from epanetparser.core.epanettypes.network import WNTREPANETNetwork
+
+    network, errors, _ = WNTREPANETNetwork.from_file("tests/data/invalid_network.json")
+    if network is None:
+        raise SystemExit(errors)
+
+    report = network.validate()                          # epanet_core
+    report = network.validate(["epanet_core", "milp"])   # plus a custom rule set
+    for issue in report.errors:
+        print(issue.code, issue.component_name, issue.fix_suggestion)
+
+Layer 3: simulation
+~~~~~~~~~~~~~~~~~~~
+
+*Does the model behave acceptably under hydraulics?* Simulation rules run on the
+WNTR results object after a hydraulic run:
+
+.. code-block:: console
+
+    ❯ epanetparser validate -f tests/data/simulation_failing_network.inp --simulation-only --simulation-ruleset hydraulic --no-digest
+
+.. image:: assets/layer3_simulation.png
+   :alt: Simulation layer reports a minimum pressure violation
+   :width: 100%
+
+**Exit status 2.** The junction sits below the reservoir, so the run reports
+``E_MINIMUM_PRESSURE`` (``-12.7 psi`` against a required ``20.0 psi``), tagged
+``validation_layer: simulation``. ``--simulation-only`` skips the static rules,
+so the report holds only simulation-layer issues; use ``--simulate`` to run the
+static rules and then the same simulation checks. Simulation validation needs
+WNTR: install ``epanetparser[simulation]``.
+
+Because every issue is tagged by layer, one report can carry a structural parse
+failure, a static rule failure and a simulation finding at once, and callers
+can filter on ``validation_layer`` without parsing message text.
+
 Installation
 ------------
 
@@ -86,58 +204,14 @@ something to try this on immediately:
 They live in ``epanetparser/networks/core/``, and are reachable as
 ``epanetparser.networks.core.Net1.inp``.
 
-A valid model produces a brief summary and exit status 0. An invalid one produces a
-report of findings and exit status 2:
+A valid model produces a brief summary and exit status 0. An invalid one reports
+findings and exits 2; the next section walks through a real example for each of
+the three validation layers.
 
-.. code-block:: console
-
-    ❯ epanetparser validate -f tests/data/invalid_network.json --no-digest
-
-    ─────────────────────────────────────── 1 ───────────────────────────────────────
-
-      🔴  1 'E_CURVE_TYPE_UNSUPPORTED' -> Unsupported curve type None
-
-    ─────────────────────────────────────────────────────────────────────────────────
-    File: invalid_network.json
-    Nodes: 785
-    Links: 909
-    Curves: 1
-    Patterns: 3
-    Controls: 2
-
-    ❯ echo $?
-    2
-
-Every finding carries a stable code, such as ``E_CURVE_TYPE_UNSUPPORTED``, so downstream
-tooling can match on it without depending on message text.
-
-Verbose output with fix suggestions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Use ``--verbose`` to show full fix suggestions for each finding:
-
-.. code-block:: console
-
-    ❯ epanetparser validate -f tests/data/invalid_network.json --verbose --no-digest
-
-    ─────────────────────────────────────── 1 ───────────────────────────────────────
-
-      🔴  1 'E_CURVE_TYPE_UNSUPPORTED' -> Unsupported curve type None
-          Rule: rule_curve_type_supported
-          Ruleset: epanet_core
-          Attribute: type
-          Category: Curve
-          Fix: Change the curve type to one of the supported types: HEAD, PUMP, EFFICIENCY, VOLUME.
-
-    ─────────────────────────────────────────────────────────────────────────────────
-    File: invalid_network.json
-    Nodes: 785
-    Links: 909
-    Curves: 1
-    Patterns: 3
-    Controls: 2
-
-Without ``--verbose``, fix suggestions are truncated to 80 characters.
+Every finding carries a stable code, such as ``E_CURVE_TYPE_UNSUPPORTED``, so
+downstream tooling can match on it without depending on message text. ``--verbose``
+adds full fix suggestions (without it they are truncated to 80 characters), and
+``--ignore-warnings`` reports errors only.
 
 Or from Python, where parsing and validation are separate steps:
 
@@ -208,12 +282,20 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
       info                 Display information about the EPANET parser
 
     ❯ epanetparser validate -h
-    usage: epanetparser validate [-h] -f <filename> [--ruleset <ruleset>]
+    Usage: epanetparser validate [-h] -f <filename> [--ruleset <ruleset>]
                                  [--list-rulesets] [--raise-on-warning]
                                  [--ignore-warnings] [--raise-on-error]
-                                 [--json-output] [--toon-output] [--pretty-output]
-                                 [--no-emoji] [--no-colour] [--terse-report]
-                                 [--no-digest] [--verbose]
+                                 [--simulate] [--simulation-ruleset <ruleset>]
+                                 [--simulation-only] [--json-output]
+                                 [--toon-output] [--pretty-output] [--no-emoji]
+                                 [--no-colour] [--terse-report] [--no-digest]
+                                 [--verbose]
+
+    Options:
+      -h, --help            show this help message and exit
+      -f, --filename <filename>
+                            File containing an EPANET model in INP or WNTR JSON
+                            format
 
     Validation Options:
       --ruleset <ruleset>   Add a custom ruleset to the core ruleset. May be given
@@ -225,6 +307,14 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
       --ignore-warnings     Omit warnings from the report
       --raise-on-error      Raise a structural parsing problem as an exception
                             instead of reporting it
+      --simulate            Run hydraulic simulation and validate simulation
+                            results
+      --simulation-ruleset <ruleset>
+                            Add a simulation ruleset for validating hydraulic
+                            results. May be given more than once, e.g.
+                            --simulation-ruleset hydraulic
+      --simulation-only     Only run simulation validation (skip static
+                            validation)
 
     Display Options:
       --json-output         Display parsing report in JSON format for machine
@@ -232,13 +322,13 @@ The ``epanetparser`` command has four subcommands: ``validate``, ``convert``,
       --toon-output         Display parsing report in TOON format for LLM
                             consumption
       --pretty-output       Display parsing report on the console with colour
+                            (default when no other output format specified)
       --no-emoji            Omit emoji in console parsing reports
-      --no-colour           Omit colour output in console parsing reports.
-                            Implies --no-emoji
+      --no-colour           Omit colour output in console parsing reports. Implies
+                            --no-emoji
       --terse-report        Display only a terse report for valid networks
       --no-digest           Omit sha256 digest in JSON and dict parsing reports
-      --verbose             Show full fix suggestions in console output (default:
-                            truncated to 80 chars)
+      --verbose             Show full fix suggestions in console output
 
 The exit status says whether the model is usable, so the command composes with a
 build:
@@ -341,12 +431,23 @@ Inspecting the rulesets
     Available rule sets:
       epanet_core (core) - EPANET core rules v1.0.0
           module: epanetparser.core_rules.epanet_core
-          rules: 35 component, 9 network
-          Simulator-agnostic checks that a model is a well-formed EPANET model.
+          rules: 119 component, 33 network
+          Simulator-agnostic checks that a model is a well-formed EPANET model:
+    required component fields, valid component types, well-formed curves, unique
+    component names, and resolvable references between components.
+      hydraulic (custom) - Hydraulic Simulation Validation v1.0.0
+          module: epanetparser.custom_rules.hydraulic
+          rules: 0 component, 0 network
+          Validation rules for hydraulic simulation results including pressure,
+    velocity, headloss, flow continuity, and energy balance checks.
       milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
           module: epanetparser.custom_rules.milp
           rules: 17 component, 0 network
-          Constraints imposed by an example MILP optimal pump scheduling tool.
+          Constraints imposed by an example MILP optimal pump scheduling tool: a 24
+    hour horizon on a 1 hour timestep and a 2 hour pattern timestep, demand-driven
+    analysis in LPS with unit viscosity and specific gravity, no pressure unit
+    overrides, no energy demand charge, and no use of valves, check valves, tank
+    volume curves, tank overflow, emitters or controls.
 
 The ``epanetparser-plugins`` command shows more detail, and can discard the
 discovery cache after a new rule set package is installed:
@@ -365,41 +466,49 @@ A model that is well-formed but violates the MILP ruleset
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The same model passes the core ruleset and fails the custom one. That is the
-distinction the architecture is built to express, and it is visible in the
-report: the MILP findings are absent from the run without ``--ruleset``, and
-every finding that does appear is attributed to the ``milp`` ruleset.
+distinction the architecture is built to express. ``--ruleset milp`` adds the
+custom rule set to ``epanet_core``, and the report shows findings from both:
+the ``E_MILP_*`` errors are attributed to ``milp``, while the core rule set
+still contributes its own warnings. Without ``--ruleset`` the ``E_MILP_*``
+findings are absent.
 
 .. code-block:: console
 
     ❯ epanetparser validate -f tests/data/invalid_network_milp_ruleset.json --ruleset milp --no-digest
 
     ╭──────────────────────────────────────────────────────────────────────────────╮
-    │ Results for 'invalid_network_milp_ruleset.json': 5 errors, 1 warning       │
+    │ Parser results for 'tests/data/invalid_network_milp_ruleset.json': 6 errors, │
+    │ 7 warnings                                                                   │
     ╰──────────────────────────────────────────────────────────────────────────────╯
     ─────────────────────────────────── Network ────────────────────────────────────
 
       🔴  network 'E_MILP_TIMESTEP' -> Simulation timestep 7200 seconds not equal
       to MILOPS timestep 3600 seconds
+          Rule: rule_hydraulic_timestep
+          Ruleset: milp
+          Attribute: hydraulic_timestep
+          Category: Option
+          Fix: Set the hydraulic timestep to 3600 seconds (1 hour). (use --verbose
+    for full)
+          component_subtype: WNTR_Network_Options
+          ruleset: milp
       🟡  network 'W_MILP_INPFILE_UNITS' -> Units not in LPS. Units in INP file
       will be different than simulated: GPM
+          Rule: warn_inpfile_units
+          Ruleset: milp
+          Attribute: inpfile_units
+          Category: Option
+          Fix: Convert the input file units to LPS (litres per second) or
+    acknowledge the unit ... (use --verbose for full)
+          component_subtype: WNTR_Network_Options
+          ruleset: milp
       🔴  network 'E_MILP_CONTROL' -> Controls not supported
-      🔴  network 'E_MILP_CONTROL' -> Controls not supported
-
-    ───────────────────────────────────── 112 ──────────────────────────────────────
-
-      🔴  112 'E_MILP_CHECK_VALVE' -> Check valves not supported
-
-    ───────────────────────────────────── 111 ──────────────────────────────────────
-
-      🔴  111 'E_MILP_VALVE' -> Valve links not supported
-
-    ─────────────────────────────────────────────────────────────────────────────────
-    File: invalid_network_milp_ruleset.json
-    Nodes: 11
-    Links: 13
-    Curves: 1
-    Patterns: 1
-    Controls: 2
+          Rule: rule_no_controls_allowed
+          Ruleset: milp
+          Attribute: type
+          Category: Control
+          Fix: Remove all control definitions from the network model. (use --verbose
+    for full)
 
     ❯ echo $?
     2
@@ -434,9 +543,10 @@ A machine-readable report
 
     {
       "is_valid": false,
+      "schema_version": "2.0",
       "counts": {
         "ERROR": 2,
-        "WARNING": 1,
+        "WARNING": 86,
         "INFO": 0
       },
       "issues": [
@@ -449,13 +559,18 @@ A machine-readable report
           "component_type": "WNTREPANETNetworkInfo",
           "component_name": null,
           "attribute": "name",
-          "component_data": {},
+          "component_data": {
+            "comment": "WaterNetworkModel - all values given in SI units",
+            "references": []
+          },
           "context": {
             "ruleset": "epanet_core",
             "component_subtype": "network_info"
           },
-          "category": "Network",
-          "fix_suggestion": "Provide a name for the network in the [TITLE] section."
+          "category": "Parameter",
+          "fix_suggestion": "Provide a name for the network model.",
+          "validation_layer": "static",
+          "simulation_metadata": {}
         },
         ...
       ]
@@ -467,7 +582,8 @@ Agentic AI Integration
 
 epanetparser provides native interfaces for agentic AI systems:
 
-### TOON Output (Token-Optimized)
+TOON Output (Token-Optimized)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 TOON (Token-Oriented Object Notation) is a compact format that reduces token usage by ~66% compared to JSON, designed for LLM consumption.
 
@@ -476,15 +592,20 @@ TOON (Token-Oriented Object Notation) is a compact format that reduces token usa
     ❯ epanetparser validate -f tests/data/invalid_network.json --toon-output --no-digest
 
     is_valid: false
-    counts: {ERROR: 2, WARNING: 1, INFO: 0}
-    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion}:
-    E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,,name,{}, {ruleset: epanet_core, component_subtype: network_info},Network,Provide a name for the network in the [TITLE] section.
-    E_CURVE_TYPE_UNSUPPORTED,"Unsupported curve type None",ERROR,rule_curve_type_supported,epanet_core,WNTREPANETCurve,C1,type,{}, {ruleset: epanet_core},Curve,Change the curve type to one of the supported types: HEAD, PUMP, EFFICIENCY, VOLUME.
-    W_UNKNOWN_PATTERN_REFERENCE,"Pattern 'P3' referenced but not defined",WARNING,rule_pattern_refs_exist,epanet_core,network,,pattern,, {ruleset: epanet_core},Network,Define the referenced pattern in the [PATTERNS] section.
+    schema_version: 2.0
+    counts:
+      ERROR: 2
+      WARNING: 86
+      INFO: 0
+    issues[88]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion,validation_layer,simulation_metadata}:
+      E_NETWORK_NAME_MISSING,"Network missing a name",ERROR,rule_network_has_name,epanet_core,WNTREPANETNetworkInfo,null,name,{comment:"WaterNetworkModel - all values given in SI units",references:[]},{ruleset:epanet_core,component_subtype:network_info},Parameter,"Provide a name for the network model.",static,{}
+      W_NETWORK_VERSION_MISSING,"Network missing a version",WARNING,warn_network_has_version,epanet_core,WNTREPANETNetworkInfo,null,version,{comment:"WaterNetworkModel - all values given in SI units",references:[]},{ruleset:epanet_core,component_subtype:network_info},Parameter,"Add version metadata to the network model for traceability.",static,{}
+    ...
 
 The ``--toon-output`` flag is mutually exclusive with ``--json-output`` and ``--pretty-output``.
 
-### Python API
+Python API
+~~~~~~~~~~
 
 .. code-block:: python
 
@@ -500,7 +621,8 @@ The ``--toon-output`` flag is mutually exclusive with ``--json-output`` and ``--
     # JSON dict for programmatic processing
     json_dict = report.as_dict()
 
-### MCP Server (Model Context Protocol)
+MCP Server (Model Context Protocol)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Install with agentic extras:
 
@@ -521,6 +643,9 @@ The server exposes these tools via stdio transport:
 - ``convert_format(input_path, output_path, epanet_version)``
 - ``list_rulesets()``
 - ``get_ruleset_details(ruleset_key, component_type)``
+- ``check_inp(file_path)``
+- ``validate_static(file_path, json_content, rulesets, output_format)``
+- ``validate_simulation(file_path, json_content, simulation_rulesets, rulesets, output_format)``
 
 Configure in your MCP client (Claude Desktop, Cursor, etc.):
 
@@ -538,7 +663,7 @@ See ``docs/source/agentic.md`` for detailed documentation and integration patter
 
 
 EPANETParser structure
----------------------
+----------------------
 
 **EPANETParser** is built from the following components:
 
@@ -586,7 +711,7 @@ UML diagrams describing the core classes and their relationships are in
 `class hierarchy page <https://tomjanus.github.io/epanetparser/hierarchy.html>`_.
 
 Validation architecture
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 A **rule set** is a module declaring ``__key__``, ``__ruleset_name__`` and
 ``__version__``, containing plain functions that ``assert``. Rules include

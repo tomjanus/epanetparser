@@ -265,7 +265,7 @@ wntr.epanet.io.InpFile().write(wn, 'network.json')
 # Or use epanetparser's built-in conversion
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 network = WNTREPANETNetwork.from_file('network.inp')[0]
-network.as_json(path='network.json')'''
+network.as_json()'''
     syntax = Syntax(wntr_code, "python", theme="monokai", line_numbers=False)
     console.print(Panel(syntax, title="WNTR Conversion Example", border_style="blue"))
 

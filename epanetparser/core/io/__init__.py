@@ -35,6 +35,9 @@ from .inp_errors import (
     InpParseError,
     InpSyntaxError,
     InpSemanticError,
+    InpStructuralError,
+    EPANET_ERROR_MAP,
+    create_inp_error,
 )
 
 __all__ = [
@@ -50,4 +53,7 @@ __all__ = [
     "InpParseError",
     "InpSyntaxError",
     "InpSemanticError",
+    "InpStructuralError",
+    "EPANET_ERROR_MAP",
+    "create_inp_error",
 ]

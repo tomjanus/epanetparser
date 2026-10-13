@@ -32,7 +32,9 @@ would change the rule sets discovered, and a malformed one would make the whole
 package fail to import. A test asserting machine-readable output must not be
 decidable by whatever happens to sit in ``~/.config``.
 """
+import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +47,28 @@ VALID = "tests/data/valid_network.json"
 INVALID = "tests/data/invalid_network.json"
 VALID_MILP = "tests/data/valid_network_milp_ruleset.json"
 INVALID_MILP = "tests/data/invalid_network_milp_ruleset.json"
+SIMULATION_FAILING = "tests/data/simulation_failing_network.inp"
+
+# Simulation validation runs the model through WNTR, which is an optional
+# extra. Detecting it by spec avoids importing the heavy package at collection
+# time and lets the simulation-layer tests skip cleanly when it is absent.
+WNTR_AVAILABLE = importlib.util.find_spec("wntr") is not None
+requires_wntr = pytest.mark.skipif(
+    not WNTR_AVAILABLE, reason="WNTR (the 'simulation' extra) is not installed"
+)
+
+
+def quiet_env():
+    """Return an environment whose console log level cannot pollute stdout.
+
+    The simulation path logs WNTR warnings through the Rich console handler,
+    which writes to stdout and would corrupt ``--json-output``. Raising the
+    console handler to CRITICAL keeps the JSON document the only thing on
+    stdout, exactly as an automated caller would configure it.
+    """
+    env = os.environ.copy()
+    env["EPANETPARSER_CONSOLE_LEVEL"] = "CRITICAL"
+    return env
 
 
 @pytest.fixture(autouse=True)
@@ -431,6 +455,109 @@ class TestInpInput:
         assert "Unsupported file extension" in result.stdout
 
 
+class TestSimulationLayers:
+    """How ``--simulate`` and ``--simulation-only`` select which layers run.
+
+    These are regression tests. ``--simulation-only`` used to run the static
+    rules as well, so it behaved identically to ``--simulate`` while its help
+    text and the documentation promised it would skip the static layer. The
+    observable contract is the set of ``validation_layer`` tags in the report.
+    """
+
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulation_only_skips_the_static_layer(self):
+        """Only simulation findings appear when the static layer is skipped.
+
+        The fixture model has known static errors (``E_TIME_DURATION_POSITIVE``
+        and ``E_REACTIONS_LIMITING_POTENTIAL``) and one simulation finding
+        (``E_MINIMUM_PRESSURE``). If any static issue leaks into the report,
+        the flag has not skipped the static layer.
+        """
+        result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulation-only",
+            "--simulation-ruleset", "hydraulic",
+            "--json-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        payload = json.loads(result.stdout)
+        codes = {issue["code"] for issue in payload["issues"]}
+        layers = {issue["validation_layer"] for issue in payload["issues"]}
+        assert layers == {"simulation"}, f"unexpected layers: {layers}"
+        assert "E_MINIMUM_PRESSURE" in codes
+        assert "E_REACTIONS_LIMITING_POTENTIAL" not in codes
+        assert "E_TIME_DURATION_POSITIVE" not in codes
+        assert result.returncode == 2
+
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulate_runs_the_static_then_the_simulation_layer(self):
+        """``--simulate`` keeps the static findings and adds simulation ones."""
+        result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulate",
+            "--simulation-ruleset", "hydraulic",
+            "--json-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        payload = json.loads(result.stdout)
+        codes = {issue["code"] for issue in payload["issues"]}
+        layers = {issue["validation_layer"] for issue in payload["issues"]}
+        assert layers == {"static", "simulation"}, f"unexpected layers: {layers}"
+        assert "E_TIME_DURATION_POSITIVE" in codes
+        assert "E_MINIMUM_PRESSURE" in codes
+
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulation_only_defaults_to_the_hydraulic_ruleset(self):
+        """With no --simulation-ruleset, the hydraulic ruleset is applied.
+
+        Without this default, --simulation-only selects no simulation rules at
+        all: the report is empty, the model is reported valid, and the command
+        exits 0 even though the network violates the minimum-pressure rule.
+        """
+        result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulation-only",
+            "--json-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        payload = json.loads(result.stdout)
+        codes = {issue["code"] for issue in payload["issues"]}
+        layers = {issue["validation_layer"] for issue in payload["issues"]}
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert payload["is_valid"] is False, "an empty report must not be valid"
+        assert payload["issues"], "expected simulation findings, got none"
+        assert layers == {"simulation"}, f"unexpected layers: {layers}"
+        assert "E_MINIMUM_PRESSURE" in codes
+
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulate_defaults_to_the_hydraulic_ruleset(self):
+        """With no --simulation-ruleset, --simulate still adds the simulation layer."""
+        result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulate",
+            "--json-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        payload = json.loads(result.stdout)
+        codes = {issue["code"] for issue in payload["issues"]}
+        layers = {issue["validation_layer"] for issue in payload["issues"]}
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert layers == {"static", "simulation"}, f"unexpected layers: {layers}"
+        assert "E_MINIMUM_PRESSURE" in codes
+
+
 class TestConvert:
     """The convert subcommand, in both directions.
 
@@ -601,6 +728,42 @@ class TestParseFailureOutput:
         result = run("-f", str(path), "--no-digest")
         assert result.returncode == 1
         assert "Unable to read input file" in result.stdout or "Invalid JSON" in result.stdout
+
+
+class TestStructuralParseFailureOutput:
+    """A malformed INP is reported as a structural finding, not a traceback."""
+
+    def malformed_inp(self, tmp_path) -> str:
+        """Write a malformed INP and return its path as a string."""
+        path = tmp_path / "malformed.inp"
+        path.write_text(
+            "[TITLE]\nTest\n[INVALID_SECTION]\nsome data\n", encoding="utf-8"
+        )
+        return str(path)
+
+    def test_json_output_tags_the_structural_layer(self, tmp_path):
+        """Machine-readable output says which layer rejected the file."""
+        result = run("-f", self.malformed_inp(tmp_path), "--json-output", "--no-digest")
+        assert result.returncode == 1
+        payload = json.loads(result.stdout)
+        assert payload["results"]["errors"] == 1
+        issue = payload["errors"]["network"][0]
+        assert issue["validation_layer"] == "structural"
+        assert issue["code"] == "E_PARSE_FAILED"
+
+    def test_toon_output_tags_the_structural_layer(self, tmp_path):
+        """TOON output carries the same structural layer marker."""
+        result = run("-f", self.malformed_inp(tmp_path), "--toon-output", "--no-digest")
+        assert result.returncode == 1
+        assert "is_valid: false" in result.stdout
+        assert "structural" in result.stdout
+
+    def test_default_output_does_not_traceback(self, tmp_path):
+        """The console report names the problem cleanly."""
+        result = run("-f", self.malformed_inp(tmp_path), "--no-digest")
+        assert result.returncode == 1
+        assert "Traceback" not in result.stderr
+        assert "INVALID_SECTION" in result.stdout
 
 
 class TestRuleSetSelectionError:

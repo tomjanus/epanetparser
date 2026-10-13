@@ -16,6 +16,10 @@ only structural problems. Validation runs afterwards against a chosen rule set
 and returns a structured report, so a model can be a valid EPANET model and
 still be rejected by an application-specific rule set.
 
+Validation happens in three layers — structural while the file is read, static
+on the parsed model, and simulation on hydraulic results — that all converge
+into one layered report. See :doc:`validation_layers` and :doc:`hierarchy`.
+
 The `epanetparser` source code is hosted
 `on GitHub <https://github.com/tomjanus/epanetparser>`_.
 

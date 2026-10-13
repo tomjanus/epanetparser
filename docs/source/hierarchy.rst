@@ -1,7 +1,8 @@
 Class Hierarchy
 ===============
 
-epanetparser is organised as four separate stages:
+epanetparser is organised as four separate stages, and validation happens
+in three layers that all converge into one report:
 
 .. code-block:: text
 
@@ -9,19 +10,23 @@ epanetparser is organised as four separate stages:
         |
         v
     Parser                    builds a model; reports structural problems only
-        |
+        |                     LAYER 1 (structural): InpParseError -> issue
         v
     EPANET model              WNTREPANETType subclasses, no rules
         |
         v
-    Static validation         simulator-agnostic; returns a ValidationReport
+    Static validation         simulator-agnostic; LAYER 2 returns issues
+        |                     tagged validation_layer="static"
+        v
+    Simulator                 optional; runs only on demand
         |
         v
-    Simulator
+    Simulation validation     LAYER 3: @simulation_rule over WNTR results
 
-The four diagrams below follow that pipeline. Each is generated from a
-PlantUML source file beside it, so the diagrams and the code can be
-checked against each other.
+All three layers append to the same ``ValidationReport``, so callers see one
+result with every issue tagged ``validation_layer``. The four diagrams below
+follow that pipeline. Each is generated from a PlantUML source file beside
+it, so the diagrams and the code can be checked against each other.
 
 Overview
 --------
@@ -78,7 +83,7 @@ would let an invalid model pass.
    :width: 100%
    
 
-Validation runs in three stages, and the order is what makes a report
+Static validation runs in three passes, and the order is what makes a report
 readable:
 
 1. component-level rules, collection by collection;
@@ -86,13 +91,52 @@ readable:
    references;
 3. each ``AssertionError`` becomes a ``ValidationIssue``.
 
-Each ``ValidationIssue`` now carries structured metadata including:
+The structural layer
+--------------------
+
+Structural failures are raised while a document is read, before any network
+object exists, so they cannot come from a rule. They are the first of the
+three layers. ``InpParseError`` is the base of that tree:
+
+- ``InpSyntaxError`` — malformed section headers, wrong field counts and
+  invalid values (EPANET codes 201, 202, 213).
+- ``InpSemanticError`` — valid syntax but unresolved references or invalid
+  values (codes 203, 205, 209, 211, 217, 225).
+- ``InpStructuralError`` — missing required sections or fundamental file
+  problems (codes 200, 204).
+
+``EPANET_ERROR_MAP`` and ``create_inp_error`` map an EPANET code to the
+matching subclass. A caught error reaches callers through
+``InpParseError.to_validation_issue()``, which returns a ``ValidationIssue``
+tagged ``validation_layer="structural"``, code ``E_PARSE_FAILED``, with the
+parser's line number, section, error code and suggestions preserved in its
+``context``. These classes live in
+:mod:`epanetparser.core.io.inp_errors`.
+
+The simulation layer
+--------------------
+
+After a hydraulic simulation, rules declared with ``@simulation_rule`` are run
+by ``Validator.validate_simulation(results, report)`` against the WNTR results
+object rather than the model. Each decorated function carries a
+``SimulationRuleSpec`` whose ``required_outputs`` (for example
+``"node.pressure"``) are checked before the rule runs: a rule whose outputs
+the simulator did not produce is skipped, not failed. Failures append to the
+same ``ValidationReport`` as the static layer, tagged
+``validation_layer="simulation"``. The ``hydraulic`` custom rule set is the
+built-in example. See :doc:`simulation_validation`.
+
+Every issue, from any layer, carries structured metadata including:
 
 - ``category``: The validation category (Topology, Parameter, Curve, Control,
   Network, Option, Energy, Engineering)
 - ``fix_suggestion``: An imperative remediation hint for AI agents
 - ``component_data``: Full data dictionary of the validated component
 - ``context``: Additional metadata (ruleset, component subtype, failing fields)
+- ``validation_layer``: Which of ``"structural"``, ``"static"`` or
+  ``"simulation"`` produced the issue
+- ``simulation_metadata``: Post-simulation context, such as the rule's
+  ``required_outputs``
 
 Only ``Severity.ERROR`` makes a report invalid.
 
@@ -134,7 +178,17 @@ from the first parameter's type annotation. Network rules must use
 styles, using ``__module__`` to avoid duplicate collection of re-exported
 functions.
 
+A rule set is not limited to the model. The ``hydraulic`` set declares
+``@simulation_rule`` functions instead, collected into the same ``RuleSet`` as
+its ``simulation_rules`` and run by the simulation layer after a hydraulic
+run.
+
 .. note::
 
    These diagrams describe the codebase as it stands. If the model layer
-   changes, they need regenerating along with it.
+   changes, they need regenerating along with it. The PlantUML sources and
+   their rendered SVG/PNG copies live in ``docs/source/diagrams/``.
+   Regenerate every diagram from the ``docs/`` directory with
+   ``make diagrams``, which runs ``docs/diagrams/render_diagrams.sh`` using
+   the vendored PlantUML jar at ``docs/diagrams/tools/plantuml.jar``. A Java
+   runtime is the only external requirement.

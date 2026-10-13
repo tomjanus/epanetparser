@@ -233,11 +233,11 @@ def main():
     )
     console.print("   [bold]Examples of errors:[/bold]")
 
-    # No core ruleset
+    # No core ruleset (falls back to default epanet_core)
     try:
-        ctx = ValidationContext(custom=["milp"])
+        ctx = ValidationContext(core=None, custom=["milp"])
         ctx.registry = custom_registry
-        validate(network, ctx)
+        console.print(f"   [green]No core specified → defaults to core={ctx.core_keys}[/green]")
     except Exception as e:
         console.print(f"   [red]No core:[/red] {type(e).__name__}: {e}")
 

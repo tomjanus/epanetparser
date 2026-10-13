@@ -5,7 +5,10 @@ parsing failures, including line numbers, section context, EPANET-compatible
 error codes, and actionable suggestions for AI agents and users.
 """
 from __future__ import annotations
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from epanetparser.core.validation.results import ValidationIssue
 
 
 class InpParseError(Exception):
@@ -54,6 +57,48 @@ class InpParseError(Exception):
             "error_code": self.error_code,
             "suggestions": self.suggestions,
         }
+
+    def to_validation_issue(self) -> "ValidationIssue":
+        """Present this parser problem as a structural validation issue.
+
+        Structural problems are raised while a document is read, before any
+        network exists, but callers still expect the layer-tagged
+        :class:`~epanetparser.core.validation.results.ValidationIssue` that the
+        static and simulation layers produce. This maps the parser's own
+        fields onto that shared shape.
+
+        Returns
+        -------
+        ValidationIssue
+            An issue with ``validation_layer="structural"``, code
+            ``"E_PARSE_FAILED"`` and the parser's line, section, error code
+            and suggestions preserved in its context.
+
+        Notes
+        -----
+        ``ValidationIssue`` and ``Severity`` are imported inside the method:
+        importing them at module load would create a cycle, because the
+        validation package is layered above the parser.
+        """
+        from epanetparser.core.validation.results import Severity, ValidationIssue
+
+        return ValidationIssue(
+            code="E_PARSE_FAILED",
+            message=self.message,
+            severity=Severity.ERROR,
+            rule_id="parse",
+            ruleset_key="parser",
+            component_type="network",
+            context={
+                "error_code": self.error_code,
+                "line_number": self.line_number,
+                "section": self.section,
+                "suggestions": list(self.suggestions),
+                "exception_type": self.__class__.__name__,
+            },
+            fix_suggestion="; ".join(self.suggestions),
+            validation_layer="structural",
+        )
 
 
 class InpSyntaxError(InpParseError):

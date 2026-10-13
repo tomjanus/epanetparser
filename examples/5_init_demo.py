@@ -224,7 +224,7 @@ def main():
         console.print(f"       Type: {source.source_type}")
         console.print(f"       Node: {source.node_name}")
         console.print(f"       Strength: {source.strength}")
-        console.print(f"       Pattern: {source.pattern_name}")
+        console.print(f"       Pattern: {source.pattern}")
 
     render_section(
         console,

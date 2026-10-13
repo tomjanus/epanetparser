@@ -450,6 +450,8 @@ def _as_dict(finding: Any) -> Dict[str, Any]:
         return finding.as_dict()
     if hasattr(finding, "as_dict"):
         return finding.as_dict()
+    if hasattr(finding, "to_dict"):
+        return finding.to_dict()
     return {"message": str(finding)}
 
 

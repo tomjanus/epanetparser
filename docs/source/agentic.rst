@@ -38,7 +38,7 @@ MCP Server
     # Start MCP server (stdio transport)
     epanetparser-mcp
 
-Configure in your MCP client (e.g., Claude Desktop, Cursor):
+Configure in your MCP client (e.g., Claude Desktop, Cursor, Claude Code, OpenCode):
 
 .. code-block:: json
 
@@ -49,6 +49,8 @@ Configure in your MCP client (e.g., Claude Desktop, Cursor):
         }
       }
     }
+
+Note: Claude Code uses ``.mcp.json`` / ``claude mcp add`` and OpenCode uses the ``mcp`` block shown in ``mcp_server.rst``.
 
 TOON Format
 -----------
@@ -124,7 +126,7 @@ Direct TOON Encoding
 MCP Server Tools
 ----------------
 
-The MCP server exposes 5 tools:
+The MCP server exposes 8 tools:
 
 1. validate_network
 ^^^^^^^^^^^^^^^^^^^
@@ -264,6 +266,113 @@ Get detailed information about a specific ruleset.
      - Filter by component type (e.g., ``"WNTREPANETNode"``)
 
 **Returns:** Ruleset details including all component and network rules.
+
+6. check_inp
+^^^^^^^^^^^^
+
+Check an EPANET INP file for structural well-formedness. Malformed files do
+not raise; parser problems are returned as issues tagged
+``validation_layer: "structural"``.
+
+**Parameters:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - Yes
+     - Path to the .inp file
+
+**Returns:** ``well_formed`` flag, the given ``file_path``, and the parser
+issues (empty when well formed).
+
+7. validate_static
+^^^^^^^^^^^^^^^^^^
+
+Validate an EPANET network model at the static layer (no simulation needed).
+Mirrors ``validate_network``; every issue is tagged
+``validation_layer: "static"``.
+
+**Parameters:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - No*
+     - Path to .inp or .json file
+   * - ``json_content``
+     - string
+     - No*
+     - Raw JSON string of WNTR model
+   * - ``rulesets``
+     - array[string]
+     - No
+     - Custom ruleset keys (e.g., ``["milp"]``)
+   * - ``output_format``
+     - string
+     - No
+     - ``"json"`` or ``"toon"`` (default: ``"json"``)
+
+\*Provide exactly one of ``file_path`` or ``json_content``.
+
+**Returns:** ValidationReport as JSON or TOON string.
+
+8. validate_simulation
+^^^^^^^^^^^^^^^^^^^^^^
+
+Validate at the simulation layer: runs the static rules, simulates with WNTR,
+then applies simulation rulesets to the results. Requires the optional
+``simulation`` extra; returns an actionable ``isError`` result when WNTR is
+not installed.
+
+**Parameters:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 15 50
+
+   * - Parameter
+     - Type
+     - Required
+     - Description
+   * - ``file_path``
+     - string
+     - No*
+     - Path to .inp or .json file
+   * - ``json_content``
+     - string
+     - No*
+     - Raw JSON string of WNTR model
+   * - ``simulation_rulesets``
+     - array[string]
+     - No
+     - Simulation ruleset keys (default: ``["hydraulic"]``)
+   * - ``rulesets``
+     - array[string]
+     - No
+     - Custom ruleset keys for the static layer (e.g., ``["milp"]``)
+   * - ``output_format``
+     - string
+     - No
+     - ``"json"`` or ``"toon"`` (default: ``"json"``)
+
+\*Provide exactly one of ``file_path`` or ``json_content``.
+
+**Returns:** Combined static + simulation ValidationReport. Simulation issues
+carry ``validation_layer: "simulation"``.
 
 Integration Patterns
 --------------------
