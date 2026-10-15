@@ -25,15 +25,15 @@ def main():
         )
     )
 
-    manager = ConfigLoader()
+    loader = ConfigLoader()
     render_section(
         console,
         1,
-        "Loading Configuration Manager",
-        "Initialize the manager and inspect the default and user configuration paths.",
+        "Loading Configuration loader",
+        "Initialize the loader and inspect the default and user configuration paths.",
     )
-    console.print(f"   [bold]Default config resource:[/bold] {manager.packaged_config_path}")
-    console.print(f"   [bold]User config location:[/bold] {manager.config_path}")
+    console.print(f"   [bold]Default config resource:[/bold] {loader.packaged_config_path}")
+    console.print(f"   [bold]User config location:[/bold] {loader.config_path}")
 
     render_section(
         console,
@@ -41,7 +41,7 @@ def main():
         "Loading Configuration With User Overrides",
         "Load the merged configuration and confirm the number of available sections.",
     )
-    config = manager.load()
+    config = loader.load()
     console.print(f"   [green]✓[/green] Configuration loaded successfully")
     console.print(f"   [bold]Total sections:[/bold] {len(config)}")
 
