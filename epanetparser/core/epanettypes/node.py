@@ -5,7 +5,7 @@ This allows WNTR element classes (Junction, Reservoir, Tank) to inherit from
 these classes and gain the validation interface.
 
 Validation rules for nodes live in
-:mod:`epanetparser.core_rules.epanet_core.nodes`, not here.
+:mod:`epanetparser.core_rules.core_static.epanet_core.nodes`, not here.
 """
 from typing import Any, Dict, KeysView, Optional, Tuple
 import copy

@@ -557,6 +557,55 @@ class TestSimulationLayers:
         assert layers == {"static", "simulation"}, f"unexpected layers: {layers}"
         assert "E_MINIMUM_PRESSURE" in codes
 
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulate_toon_output_carries_both_layers(self):
+        """--toon-output works on the static+simulation path and agrees with JSON."""
+        json_result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulate",
+            "--simulation-ruleset", "hydraulic",
+            "--json-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        payload = json.loads(json_result.stdout)
+        toon_result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulate",
+            "--simulation-ruleset", "hydraulic",
+            "--toon-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        assert toon_result.returncode == 2, toon_result.stdout + toon_result.stderr
+        assert "is_valid: false" in toon_result.stdout
+        assert "E_MINIMUM_PRESSURE" in toon_result.stdout
+        assert "simulation" in toon_result.stdout
+        assert "static" in toon_result.stdout
+        for code in {issue["code"] for issue in payload["issues"]}:
+            assert code in toon_result.stdout, f"{code} missing from TOON"
+
+    @requires_wntr
+    @pytest.mark.integration
+    def test_simulation_only_toon_output_carries_only_the_simulation_layer(self):
+        """--toon-output works on the simulation-only path."""
+        result = run(
+            "-f", SIMULATION_FAILING,
+            "--simulation-only",
+            "--simulation-ruleset", "hydraulic",
+            "--toon-output",
+            "--no-digest",
+            env=quiet_env(),
+            timeout=600,
+        )
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "is_valid: false" in result.stdout
+        assert "E_MINIMUM_PRESSURE" in result.stdout
+        assert "simulation" in result.stdout
+
 
 class TestConvert:
     """The convert subcommand, in both directions.
@@ -702,15 +751,19 @@ class TestParseFailureOutput:
     """Tests for parse failure output in different formats."""
 
     def test_parse_failure_json_output(self, tmp_path):
-        """Parse failure with --json-output returns JSON error report."""
+        """Parse failure with --json-output returns the same report shape as TOON."""
         path = tmp_path / "broken.json"
         path.write_text("{not json", encoding="utf-8")
         result = run("-f", str(path), "--json-output", "--no-digest")
         assert result.returncode == 1
         payload = json.loads(result.stdout)
-        assert payload["results"]["errors"] == 1
-        assert "errors" in payload
-        assert "network" in payload["errors"]
+        assert payload["is_valid"] is False
+        assert payload["counts"]["ERROR"] >= 1
+        assert payload["issues"], "the failure must be reported as an issue"
+        assert all(
+            issue["validation_layer"] == "structural"
+            for issue in payload["issues"]
+        )
 
     def test_parse_failure_toon_output(self, tmp_path):
         """Parse failure with --toon-output returns TOON error report."""
@@ -746,8 +799,8 @@ class TestStructuralParseFailureOutput:
         result = run("-f", self.malformed_inp(tmp_path), "--json-output", "--no-digest")
         assert result.returncode == 1
         payload = json.loads(result.stdout)
-        assert payload["results"]["errors"] == 1
-        issue = payload["errors"]["network"][0]
+        assert payload["is_valid"] is False
+        issue = payload["issues"][0]
         assert issue["validation_layer"] == "structural"
         assert issue["code"] == "E_PARSE_FAILED"
 

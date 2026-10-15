@@ -31,3 +31,13 @@ def test_integration(session):
     """ Run integration tests (require external services) """
     session.install(".[simulation]", "pytest", "pytest-cov")
     session.run("pytest", "-m", "integration", *session.posargs)
+
+
+@nox.session(python=["3.10", "3.11", "3.12", "3.13"])
+def examples(session):
+    """ Run every examples/NN_*.py demo plus the notebook smoke test """
+    # The simulation extra lets the simulation-using demos run their full
+    # three layers instead of skipping; nbformat is the examples group's
+    # notebook tooling, kept installed for notebook-aware workflows.
+    session.install(".[simulation]", "pytest", "nbformat")
+    session.run("pytest", "tests/test_examples.py", *session.posargs)

@@ -7,7 +7,7 @@ belong to a custom ruleset that knows the application's scheduling
 assumptions, not to the core ruleset.
 
 Validation rules for patterns live in
-:mod:`epanetparser.core_rules.epanet_core.patterns`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.patterns`.
 """
 from typing import Any, Dict, List
 

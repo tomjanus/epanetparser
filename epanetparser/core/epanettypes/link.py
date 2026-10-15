@@ -5,8 +5,8 @@ This allows WNTR element classes (Pipe, Pump, Valve) to inherit from
 these classes and gain the validation interface.
 
 Validation rules for links live in
-:mod:`epanetparser.core_rules.epanet_core.links` and, for cross-component
-references, in :mod:`epanetparser.core_rules.epanet_core.network_rules`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.links` and, for cross-component
+references, in :mod:`epanetparser.core_rules.core_static.epanet_core.network_rules`.
 """
 from typing import Any, Dict, Optional, Tuple
 

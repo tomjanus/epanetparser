@@ -43,7 +43,7 @@ from epanetparser.core.validation.registry import (
     RuleSetRegistry,
     RuleSetSelectionError,
 )
-from epanetparser.core.validation.results import ValidationIssue, ValidationReport
+from epanetparser.core.validation.results import Severity, ValidationIssue, ValidationReport
 from epanetparser.core.validation.rules import (
     RuleExecutionError,
     RuleSpec,
@@ -567,7 +567,63 @@ class Validator:
 
             self._run_simulation_rule(spec, simulation_results, ruleset, report)
 
+        self._validate_result_schemas(simulation_results, report)
+
         return report
+
+    def _validate_result_schemas(
+        self,
+        simulation_results: Any,
+        report: ValidationReport,
+    ) -> None:
+        """Check the simulation result tables against the Pandera schemas.
+
+        The schemas live with the core dynamic ``hydraulic`` rule set and
+        depend on the optional ``pandera`` package (``epanetparser[schemas]``).
+        When pandera is not installed the checks are skipped with a debug
+        log, so simulation validation still runs. When it is installed, the
+        available result tables of each layer are validated and a failure is
+        reported as an ``E_SIMULATION_SCHEMA`` issue.
+        """
+        from epanetparser.core_rules.core_dynamic.hydraulic import schemas
+
+        if not schemas.schemas_available():
+            logger.debug(
+                "pandera not installed; skipping simulation result schema checks"
+            )
+            return
+
+        failures: List[str] = []
+        node_results = getattr(simulation_results, "node", None)
+        link_results = getattr(simulation_results, "link", None)
+        node_frame = _layer_snapshot(node_results)
+        if node_frame is not None and not schemas.validate_node_results(node_frame):
+            failures.append("node")
+        link_frame = _layer_snapshot(link_results)
+        if link_frame is not None and not schemas.validate_link_results(link_frame):
+            failures.append("link")
+
+        if failures:
+            report.add(
+                ValidationIssue(
+                    code="E_SIMULATION_SCHEMA",
+                    message=(
+                        "Simulation results failed schema validation: "
+                        + ", ".join(sorted(failures))
+                    ),
+                    severity=Severity.ERROR,
+                    rule_id="validate_schemas",
+                    ruleset_key="hydraulic",
+                    component_type="simulation",
+                    component_name=None,
+                    attribute=None,
+                    component_data={},
+                    context={"schema_failures": sorted(failures)},
+                    category="Schema",
+                    fix_suggestion="Check the simulation configuration and outputs.",
+                    validation_layer="simulation",
+                )
+            )
 
     def _get_available_outputs(self, simulation_results: Any) -> set:
         """Extract the names of available outputs from simulation results.
@@ -795,6 +851,50 @@ class Validator:
             raise RuleExecutionError(
                 f"Rule '{spec.rule_id}' from rule set '{ruleset.key}' failed: {err}"
             ) from err
+
+
+def _layer_snapshot(results: Any) -> Optional[Any]:
+    """Build the cross-output snapshot frame the Pandera schemas expect.
+
+    WNTR exposes each layer's results as a mapping of per-output tables
+    (components x timesteps), while the Pandera schemas describe one row per
+    component with one column per output. The snapshot takes the final
+    timestep of every available output table, so it is the frame the schemas
+    can validate. A layer that already is such a frame is returned as-is;
+    anything else yields None and the schema check is skipped for the layer.
+
+    Parameters
+    ----------
+    results : Any
+        A layer's simulation results: either a DataFrame, or a mapping of
+        output name to per-output DataFrame.
+
+    Returns
+    -------
+    Optional[Any]
+        A DataFrame indexed by component name with one column per available
+        output, or None when no usable table is present.
+    """
+    import pandas as pd  # type: ignore[import-untyped]
+
+    if isinstance(results, pd.DataFrame):
+        return results
+    if not hasattr(results, "items"):
+        return None
+    columns = {}
+    for output, table in results.items():
+        if table is None or not hasattr(table, "iloc"):
+            continue
+        try:
+            columns[str(output)] = table.iloc[:, -1]
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+    if not columns:
+        return None
+    try:
+        return pd.DataFrame(columns)
+    except (TypeError, ValueError):  # pragma: no cover - ragged inputs
+        return None
 
 
 def _target_name(target: Any) -> Optional[str]:

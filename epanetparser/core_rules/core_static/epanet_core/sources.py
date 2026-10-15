@@ -4,7 +4,7 @@ A water quality source names the node it injects into, the constituent it
 injects, and how strongly. All three are needed for the source to mean
 anything, so all three are required here; whether the referenced node and
 pattern exist is a question about the whole model and is checked by
-:mod:`epanetparser.core_rules.epanet_core.network`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.network`.
 
 Notes
 -----

@@ -6,10 +6,10 @@ run. It holds the rule sets found by
 resolves a :class:`~epanetparser.core.validation.engine.ValidationContext` into
 an ordered list of :class:`RuleSet` objects.
 
-Exactly one core rule set may be selected; any number of custom rule sets may
-be selected alongside it. Core and custom rule sets are found and selected
-through the same code, and are distinguished only by the ``__is_core__``
-module attribute.
+Exactly one core rule set of the static layer may be selected; any number of
+custom rule sets and dynamic core rule sets may be selected alongside it. Core
+and custom rule sets are found and selected through the same code, and are
+distinguished only by the ``__is_core__`` and ``__layer__`` module attributes.
 
 Rule sets are found by scanning the packages named by
 :attr:`RuleSetRegistry.packages` and by reading the
@@ -92,6 +92,11 @@ class RuleSet:
         Description, from ``__description__``, empty when absent.
     is_core : bool
         True when the defining module sets ``__is_core__ = True``.
+    layer : str
+        Validation layer this rule set belongs to, from the module's
+        ``__layer__``: ``"static"`` for rule sets that run against a parsed
+        model, ``"dynamic"`` for rule sets that run against simulation
+        results. Defaults to ``"static"`` when the module declares nothing.
     module_path : str
         Import path of the defining module.
     component_rules : Tuple[RuleSpec, ...]
@@ -125,12 +130,13 @@ class RuleSet:
     component_rules: Tuple[RuleSpec, ...] = field(default=())
     network_rules: Tuple[RuleSpec, ...] = field(default=())
     simulation_rules: Tuple[SimulationRuleSpec, ...] = field(default=())
+    layer: str = "static"
 
     def __str__(self) -> str:
         kind = "core" if self.is_core else "custom"
         sim_count = len(self.simulation_rules)
         return (
-            f"{self.key} ({kind}): {self.name} v{self.version} "
+            f"{self.key} ({kind}, {self.layer}): {self.name} v{self.version} "
             f"[{len(self.component_rules)} component, "
             f"{len(self.network_rules)} network, "
             f"{sim_count} simulation rules]"
@@ -187,6 +193,7 @@ class RuleSet:
             version=module.__version__,
             description=getattr(module, "__description__", "") or "",
             is_core=bool(getattr(module, "__is_core__", False)),
+            layer=str(getattr(module, "__layer__", "static") or "static"),
             module_path=module.__name__,
             component_rules=tuple(component_rules),
             network_rules=tuple(network_rules),
@@ -208,6 +215,7 @@ class RuleSet:
             "version": self.version,
             "description": self.description,
             "is_core": self.is_core,
+            "layer": self.layer,
             "module_path": self.module_path,
             "rule_count": self.rule_count,
             "component_rules": [
@@ -218,6 +226,7 @@ class RuleSet:
                     "component_type": spec.component_type,
                     "description": spec.description,
                     "attribute": spec.attribute,
+                    "layer": spec.layer,
                 }
                 for spec in self.component_rules
             ],
@@ -228,6 +237,7 @@ class RuleSet:
                     "severity": spec.severity.name,
                     "description": spec.description,
                     "attribute": spec.attribute,
+                    "layer": spec.layer,
                 }
                 for spec in self.network_rules
             ],
@@ -239,6 +249,7 @@ class RuleSet:
                     "description": spec.description,
                     "attribute": spec.attribute,
                     "required_outputs": list(spec.required_outputs),
+                    "layer": spec.layer,
                 }
                 for spec in self.simulation_rules
             ],
@@ -272,9 +283,9 @@ class RuleSetRegistry:
     --------
     >>> registry = RuleSetRegistry()
     >>> sorted(registry.keys())
-    ['epanet_core', 'milp']
+    ['epanet_core', 'hydraulic', 'milp']
     >>> registry.core_keys()
-    ['epanet_core']
+    ['epanet_core', 'hydraulic']
     """
 
     def __init__(
@@ -431,10 +442,16 @@ class RuleSetRegistry:
                 f"Rule set '{core.key}' is not a core rule set; "
                 "pass it as a custom rule set instead"
             )
+        if core.layer != "static":
+            raise RuleSetSelectionError(
+                f"Rule set '{core.key}' is a core rule set of the "
+                f"'{core.layer}' layer; the core slot must resolve to the "
+                "static core rule set"
+            )
         selected.append(core)
         for key in context.custom:
             ruleset = self.get(key)
-            if ruleset.is_core:
+            if ruleset.is_core and ruleset.layer != "dynamic":
                 raise RuleSetSelectionError(
                     f"Core rule set '{ruleset.key}' cannot be selected as a "
                     "custom rule set"
@@ -454,7 +471,10 @@ class RuleSetRegistry:
         lines: List[str] = ["Available rule sets:"]
         for ruleset in self.all():
             kind = "core" if ruleset.is_core else "custom"
-            lines.append(f"  {ruleset.key} ({kind}) - {ruleset.name} v{ruleset.version}")
+            lines.append(
+                f"  {ruleset.key} ({kind}, {ruleset.layer}) - "
+                f"{ruleset.name} v{ruleset.version}"
+            )
             lines.append(f"      module: {ruleset.module_path}")
             lines.append(
                 f"      rules: {len(ruleset.component_rules)} component, "
@@ -493,7 +513,7 @@ def list_rulesets(packages: Optional[Sequence[str]] = None) -> List[Dict[str, An
     >>> from epanetparser.core.validation import list_rulesets
     >>> rulesets = list_rulesets()
     >>> [rs["key"] for rs in rulesets]
-    ['epanet_core', 'milp']
+    ['epanet_core', 'hydraulic', 'milp']
     """
     registry = RuleSetRegistry(packages=packages)
     return [rs.as_dict() for rs in registry.all()]

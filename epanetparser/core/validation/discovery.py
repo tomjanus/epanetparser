@@ -9,7 +9,7 @@ kinds.
 Two layouts are supported, and a single discovery pass finds both:
 
 - a rule set as a package, with its rules split across submodules
-  (``epanetparser.core_rules.epanet_core.nodes``);
+  (``epanetparser.core_rules.core_static.epanet_core.nodes``);
 - a rule set as a plain module holding its rules directly
   (``epanetparser.custom_rules.milp``).
 
@@ -42,8 +42,13 @@ REQUIRED_METADATA = ("__key__", "__ruleset_name__", "__version__")
 ENTRY_POINT_GROUP = "epanetparser.rulesets"
 
 #: Rule set packages that are always searched, ahead of any configured entry.
+#: The three leaf packages hold the core static rule sets, the core dynamic
+#: rule sets and the custom rule sets; every discovered rule set is classified
+#: by module metadata (``__is_core__``, ``__layer__``), not by which of these
+#: packages provided it.
 _BUILTIN_PACKAGES = (
-    "epanetparser.core_rules",
+    "epanetparser.core_rules.core_static",
+    "epanetparser.core_rules.core_dynamic",
     "epanetparser.custom_rules",
 )
 
@@ -80,7 +85,7 @@ def default_packages() -> List[str]:
     Examples
     --------
     >>> default_packages()
-    ['epanetparser.core_rules', 'epanetparser.custom_rules']
+    ['epanetparser.core_rules.core_static', 'epanetparser.core_rules.core_dynamic', 'epanetparser.custom_rules']
     """
     configured = _configured_packages()
     return configured or list(_BUILTIN_PACKAGES)
@@ -110,7 +115,7 @@ def _configured_packages() -> Optional[List[str]]:
     With ``rule_set_discovery.extra_packages: [my_own_pkg]``:
 
     >>> _configured_packages()  # doctest: +SKIP
-    ['epanetparser.core_rules', 'epanetparser.custom_rules', 'my_own_pkg']
+    ['epanetparser.core_rules.core_static', 'epanetparser.core_rules.core_dynamic', 'epanetparser.custom_rules', 'my_own_pkg']
     """
     try:
         from epanetparser.core.config.manager import ConfigLoader
@@ -214,7 +219,7 @@ def discover_ruleset_modules(
     --------
     >>> modules = discover_ruleset_modules(["epanetparser.core_rules"])
     >>> sorted(modules)
-    ['epanet_core']
+    ['epanet_core', 'hydraulic']
     """
     search_packages = list(packages) if packages is not None else default_packages()
     found: Dict[str, ModuleType] = {}

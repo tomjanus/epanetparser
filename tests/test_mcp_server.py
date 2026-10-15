@@ -118,6 +118,23 @@ class TestMCPServer:
         assert "validation_layer" in text
 
     @pytest.mark.asyncio
+    async def test_validate_network_json_and_toon_agree(self, invalid_network_path, server_params):
+        """JSON and TOON describe the same report: counts and codes match."""
+        json_result = await self._call_tool(server_params, "validate_network", {
+            "file_path": invalid_network_path,
+        })
+        payload = json.loads(json_result.content[0].text)
+        toon_result = await self._call_tool(server_params, "validate_network", {
+            "file_path": invalid_network_path,
+            "output_format": "toon",
+        })
+        text = toon_result.content[0].text
+        assert f"issues[{len(payload['issues'])}]" in text
+        for issue in payload["issues"]:
+            assert issue["code"] in text
+            assert issue["validation_layer"] in text
+
+    @pytest.mark.asyncio
     async def test_validate_network_error_both_inputs(self, valid_network_path, server_params):
         result = await self._call_tool(server_params, "validate_network", {
             "file_path": valid_network_path,
@@ -213,6 +230,10 @@ class TestMCPServer:
         assert len(data["core_rulesets"]) >= 1
         core_keys = [rs["key"] for rs in data["core_rulesets"]]
         assert "epanet_core" in core_keys
+        layers = {rs["key"]: rs["layer"] for rs in data["core_rulesets"]}
+        assert layers["epanet_core"] == "static"
+        assert layers["hydraulic"] == "dynamic"
+        assert data["custom_rulesets"][0]["layer"] == "static"
 
     @pytest.mark.asyncio
     async def test_get_ruleset_details_epanet_core(self, server_params):
@@ -224,6 +245,7 @@ class TestMCPServer:
         data = json.loads(result.content[0].text)
         assert data["key"] == "epanet_core"
         assert data["type"] == "core"
+        assert data["layer"] == "static"
         assert "component_rules" in data
         assert "network_rules" in data
         assert len(data["component_rules"]) > 0
@@ -238,6 +260,23 @@ class TestMCPServer:
         data = json.loads(result.content[0].text)
         assert data["key"] == "milp"
         assert data["type"] == "custom"
+        assert data["layer"] == "static"
+        simulation_ids = [rule["rule_id"] for rule in data["simulation_rules"]]
+        assert "rule_simulation_timestep_count" in simulation_ids
+
+    @pytest.mark.asyncio
+    async def test_get_ruleset_details_hydraulic(self, server_params):
+        """A dynamic ruleset's details carry its layer and simulation rules."""
+        result = await self._call_tool(server_params, "get_ruleset_details", {
+            "ruleset_key": "hydraulic",
+        })
+        data = json.loads(result.content[0].text)
+        assert data["layer"] == "dynamic"
+        assert data["component_rules"] == []
+        assert len(data["simulation_rules"]) > 0
+        assert {rule["layer"] for rule in data["simulation_rules"]} == {
+            "simulation"
+        }
 
     @pytest.mark.asyncio
     async def test_get_ruleset_details_filter_component_type(self, server_params):
@@ -291,6 +330,38 @@ class TestMCPServer:
         assert len(report["issues"]) > 0
         assert all(issue["validation_layer"] == "static" for issue in report["issues"])
 
+    @pytest.mark.asyncio
+    async def test_validate_static_toon_output(self, invalid_network_path, server_params):
+        """TOON carries the same static report as JSON, with the layer tagged."""
+        json_result = await self._call_tool(server_params, "validate_static", {
+            "file_path": invalid_network_path,
+        })
+        payload = json.loads(json_result.content[0].text)
+        toon_result = await self._call_tool(server_params, "validate_static", {
+            "file_path": invalid_network_path,
+            "output_format": "toon",
+        })
+        text = toon_result.content[0].text
+        assert "is_valid: false" in text
+        assert f"issues[{len(payload['issues'])}]" in text
+        for issue in payload["issues"]:
+            assert issue["code"] in text
+        assert "static" in text
+
+    @pytest.mark.asyncio
+    async def test_validate_static_load_failure_is_tagged_static(self, server_params):
+        """A load failure is a static-layer document in the full issue shape."""
+        result = await self._call_tool(server_params, "validate_static", {
+            "file_path": "/nonexistent/model.json",
+        })
+        report = json.loads(result.content[0].text)
+        assert report["is_valid"] is False
+        (issue,) = report["issues"]
+        assert issue["code"] == "E_LOAD_FAILED"
+        assert issue["validation_layer"] == "static"
+        for field in ("category", "fix_suggestion", "simulation_metadata"):
+            assert field in issue
+
     @requires_wntr
     @pytest.mark.asyncio
     async def test_validate_simulation_reports_simulation_issues(self, server_params):
@@ -304,6 +375,25 @@ class TestMCPServer:
             if issue["validation_layer"] == "simulation"
         ]
         assert len(sim_issues) >= 1
+
+    @requires_wntr
+    @pytest.mark.asyncio
+    async def test_validate_simulation_toon_output(self, server_params):
+        """TOON carries the same simulation report as JSON: counts and codes."""
+        json_result = await self._call_tool(server_params, "validate_simulation", {
+            "file_path": "tests/data/simulation_failing_network.inp",
+        })
+        payload = json.loads(json_result.content[0].text)
+        toon_result = await self._call_tool(server_params, "validate_simulation", {
+            "file_path": "tests/data/simulation_failing_network.inp",
+            "output_format": "toon",
+        })
+        text = toon_result.content[0].text
+        assert "is_valid: false" in text
+        assert f"issues[{len(payload['issues'])}]" in text
+        for issue in payload["issues"]:
+            assert issue["code"] in text
+            assert issue["validation_layer"] in text
 
     @pytest.mark.asyncio
     async def test_validate_simulation_without_wntr_returns_actionable_error(self):

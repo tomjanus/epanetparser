@@ -1,7 +1,8 @@
-"""Hydraulic simulation validation ruleset.
+"""Hydraulic simulation validation rules.
 
-This ruleset contains validation rules that run after a hydraulic simulation
-and check the simulation results for common hydraulic issues such as:
+This module holds the rules of the core dynamic ``hydraulic`` ruleset. Each
+rule runs after a hydraulic simulation and checks the simulation results for
+common hydraulic issues such as:
 
 * Minimum/maximum pressure violations
 * Excessive velocities
@@ -9,32 +10,12 @@ and check the simulation results for common hydraulic issues such as:
 * Energy balance violations
 
 These rules require a hydraulic simulation to have been run first, and are
-only executed when the --simulate flag is used.
+only executed when the simulation layer is requested (``--simulate`` on the
+CLI, or the simulation validation tools on the MCP server).
 
-Select it alongside the core ruleset:
-
-.. code-block:: python
-
-    from epanetparser.core.validation import validate
-
-    report = validate(network, ["epanet_core", "hydraulic"])
-    # Then run simulation validation
-    results = network.to_wntr().run_sim()
-    validator = Validator.from_context(["epanet_core", "hydraulic"])
-    report = validator.validate_simulation(results, report)
-
-Ruleset Metadata
-----------------
-__key__ : str
-    Unique identifier for this ruleset ('hydraulic').
-__ruleset_name__ : str
-    Human-readable name of the ruleset.
-__version__ : str
-    Semantic version of this ruleset.
-__description__ : str
-    Detailed description of the ruleset's purpose and constraints.
-__is_core__ : bool
-    Absent, so this ruleset is classified as custom rather than core.
+WNTR is an optional dependency and is deliberately not imported here: the
+rules operate on the simulation results object passed to them, so a missing
+installation is reported when a simulation is run, never at discovery time.
 """
 from epanetparser.core.validation import simulation_rule, Severity
 
@@ -178,14 +159,3 @@ def rule_energy_balance(results) -> None:
     # This is a complex check that would require pump energy calculations
     # Placeholder for future implementation
     pass
-
-
-# Ruleset metadata for auto-discovery
-__key__ = "hydraulic"
-__ruleset_name__ = "Hydraulic Simulation Validation"
-__version__ = "1.0.0"
-__description__ = (
-    "Validation rules for hydraulic simulation results including pressure, "
-    "velocity, headloss, flow continuity, and energy balance checks."
-)
-__is_core__ = False

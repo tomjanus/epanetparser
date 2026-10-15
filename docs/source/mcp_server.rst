@@ -156,7 +156,10 @@ Validate an EPANET network model with optional custom rulesets.
 
 \*Provide exactly one of ``file_path`` or ``json_content``.
 
-**Returns:** ValidationReport as JSON string or TOON string.
+**Returns:** ValidationReport as JSON string or TOON string. The two formats
+describe the same report: the same validity, counts, issue codes and
+``validation_layer`` values, including the ``E_LOAD_FAILED`` issue returned
+when the model cannot be loaded (tagged ``"static"``).
 
 **Example Request**
 
@@ -343,9 +346,22 @@ List all available validation rulesets (core and custom).
           "name": "EPANET core rules",
           "version": "1.0.0",
           "type": "core",
+          "layer": "static",
           "description": "Simulator-agnostic checks that a model is a well-formed EPANET model.",
           "component_rules": 44,
-          "network_rules": 12
+          "network_rules": 12,
+          "simulation_rules": 0
+        },
+        {
+          "key": "hydraulic",
+          "name": "Hydraulic Simulation Validation",
+          "version": "1.0.0",
+          "type": "core",
+          "layer": "dynamic",
+          "description": "Validation rules for hydraulic simulation results.",
+          "component_rules": 0,
+          "network_rules": 0,
+          "simulation_rules": 7
         }
       ],
       "custom_rulesets": [
@@ -354,12 +370,17 @@ List all available validation rulesets (core and custom).
           "name": "Mixed Integer Linear Programming ruleset",
           "version": "0.2.0",
           "type": "custom",
+          "layer": "static",
           "description": "Constraints imposed by an example MILP optimal pump scheduling tool.",
           "component_rules": 17,
-          "network_rules": 0
+          "network_rules": 0,
+          "simulation_rules": 1
         }
       ]
     }
+
+Each entry carries ``layer`` (``"static"`` or ``"dynamic"``) alongside
+``type`` (``"core"`` or ``"custom"``).
 
 5. get_ruleset_details
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -405,6 +426,7 @@ Get detailed information about a specific ruleset, including all its rules.
       "name": "EPANET core rules",
       "version": "1.0.0",
       "type": "core",
+      "layer": "static",
       "description": "Simulator-agnostic checks that a model is a well-formed EPANET model.",
       "component_rules": [
         {
@@ -413,7 +435,8 @@ Get detailed information about a specific ruleset, including all its rules.
           "description": "A node must have a name.",
           "severity": "ERROR",
           "attribute": "name",
-          "component_type": "WNTREPANETNode"
+          "component_type": "WNTREPANETNode",
+          "layer": "static"
         },
         {
           "rule_id": "warn_node_has_type",
@@ -421,7 +444,8 @@ Get detailed information about a specific ruleset, including all its rules.
           "description": "A node should declare which kind of node it is.",
           "severity": "WARNING",
           "attribute": "node_type",
-          "component_type": "WNTREPANETNode"
+          "component_type": "WNTREPANETNode",
+          "layer": "static"
         }
       ],
       "network_rules": [
@@ -430,10 +454,15 @@ Get detailed information about a specific ruleset, including all its rules.
           "code": "E_NETWORK_NAME_MISSING",
           "description": "Network missing a name",
           "severity": "ERROR",
-          "attribute": "name"
+          "attribute": "name",
+          "layer": "static"
         }
-      ]
+      ],
+      "simulation_rules": []
     }
+
+The details carry the ruleset ``layer`` and each rule's ``layer``, plus the
+``simulation_rules`` list, so a dynamic rule set's details are not empty.
 
 6. check_inp
 ^^^^^^^^^^^^
@@ -542,7 +571,8 @@ reported issue is tagged ``validation_layer: "static"``.
 \*Provide exactly one of ``file_path`` or ``json_content``.
 
 **Returns:** ValidationReport as JSON string or TOON string, with every issue
-at the static layer.
+at the static layer. As with ``validate_network``, the two formats describe
+the same report.
 
 **Example Response**
 
@@ -609,7 +639,8 @@ instead of a traceback.
 \*Provide exactly one of ``file_path`` or ``json_content``.
 
 **Returns:** The combined static + simulation ValidationReport. Simulation
-issues carry ``validation_layer: "simulation"``.
+issues carry ``validation_layer: "simulation"``. JSON and TOON describe the
+same report, as with the other two validation tools.
 
 **Example Response**
 

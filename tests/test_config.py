@@ -56,9 +56,11 @@ from epanetparser.core.config import Config, ConfigError, ConfigLoader
 from epanetparser.core.validation.discovery import default_packages
 
 #: The rule set search paths the package must find even when a user replaces
-#: them. ``epanetparser.core_rules`` carries the core rule set; without it every
-#: model is reported invalid.
-CORE_RULES_PACKAGE = "epanetparser.core_rules"
+#: them. ``epanetparser.core_rules.core_static`` carries the core static rule
+#: set and ``epanetparser.core_rules.core_dynamic`` the core dynamic rule sets;
+#: without them every model is reported invalid.
+CORE_STATIC_PACKAGE = "epanetparser.core_rules.core_static"
+CORE_DYNAMIC_PACKAGE = "epanetparser.core_rules.core_dynamic"
 
 CUSTOM_RULES_PACKAGE = "epanetparser.custom_rules"
 
@@ -745,14 +747,15 @@ class TestBundledDefaultConfigContract:
         if key is not None:
             assert key in data[section]
 
-    def test_the_default_search_paths_are_the_two_builtin_packages(self) -> None:
+    def test_the_default_search_paths_are_the_builtin_leaf_packages(self) -> None:
         """The file ships the same list ``discovery._BUILTIN_PACKAGES`` names.
 
         Read from the file rather than from the constant, so that the constant
         and the file cannot drift apart unnoticed.
         """
         assert _bundled_defaults()["rule_set_discovery"]["packages"] == [
-            CORE_RULES_PACKAGE,
+            CORE_STATIC_PACKAGE,
+            CORE_DYNAMIC_PACKAGE,
             CUSTOM_RULES_PACKAGE,
         ]
 
@@ -899,7 +902,8 @@ class TestRuleSetDiscoveryReadsConfiguration:
         """
         xdg_user_config.write("rule_set_discovery:\n  extra_packages: [my_own_pkg]\n")
         assert default_packages() == [
-            CORE_RULES_PACKAGE,
+            CORE_STATIC_PACKAGE,
+            CORE_DYNAMIC_PACKAGE,
             CUSTOM_RULES_PACKAGE,
             "my_own_pkg",
         ]
@@ -916,7 +920,8 @@ class TestRuleSetDiscoveryReadsConfiguration:
         """
         xdg_user_config.write("rule_set_discovery:\n  packages: [my_own_pkg]\n")
         packages = default_packages()
-        assert CORE_RULES_PACKAGE in packages
+        assert CORE_STATIC_PACKAGE in packages
+        assert CORE_DYNAMIC_PACKAGE in packages
         assert "my_own_pkg" in packages
 
     def test_a_package_declared_twice_is_searched_once(
@@ -929,10 +934,12 @@ class TestRuleSetDiscoveryReadsConfiguration:
         otherwise import it twice and see duplicate-key warnings.
         """
         xdg_user_config.write(
-            f"rule_set_discovery:\n  extra_packages: [{CORE_RULES_PACKAGE}, zzz]\n"
+            "rule_set_discovery:\n  extra_packages: "
+            f"[{CORE_STATIC_PACKAGE}, zzz]\n"
         )
         assert default_packages() == [
-            CORE_RULES_PACKAGE,
+            CORE_STATIC_PACKAGE,
+            CORE_DYNAMIC_PACKAGE,
             CUSTOM_RULES_PACKAGE,
             "zzz",
         ]
@@ -946,7 +953,11 @@ class TestRuleSetDiscoveryReadsConfiguration:
         picking up a file left behind by another test in the session.
         """
         assert not (isolated_config_home / ConfigLoader.APP_NAME).exists()
-        assert default_packages() == [CORE_RULES_PACKAGE, CUSTOM_RULES_PACKAGE]
+        assert default_packages() == [
+            CORE_STATIC_PACKAGE,
+            CORE_DYNAMIC_PACKAGE,
+            CUSTOM_RULES_PACKAGE,
+        ]
 
 
 class TestLoadedConfigurationIsQuiet:

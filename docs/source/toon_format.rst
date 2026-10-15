@@ -180,7 +180,7 @@ Issues Column Order
 
 .. code-block:: text
 
-    code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion
+    code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion,validation_layer,simulation_metadata
 
 Example Output
 ^^^^^^^^^^^^^^
@@ -189,10 +189,10 @@ Example Output
 
     is_valid: false
     counts: {ERROR: 1, WARNING: 2, INFO: 0}
-    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion}:
-    E_NODE_ELEVATION_MISSING,"Junction does not define elevation",ERROR,rule_junction_has_elevation,epanet_core,WNTREPANETNode,J1,elevation,{node_type: Junction, name: J1, elevation: null, base_demand: 0}, {ruleset: epanet_core, component_subtype: Junction},Parameter,Provide the junction elevation in meters.
-    W_NODE_COORDINATES_MISSING,"Missing coordinates, node will not be displayed",WARNING,warn_node_missing_coord,epanet_core,WNTREPANETNode,J1,coordinates,{node_type: Junction, name: J1, elevation: 100, base_demand: 0}, {ruleset: epanet_core, component_subtype: Junction},Topology,Assign X,Y coordinates to the node for map display.
-    E_UNKNOWN_CURVE_REFERENCE,"Links reference undefined curves: P1 pump_curve_name <C9>",ERROR,rule_link_curves_exist,epanet_core,network,,pump_curve_name,{}, {ruleset: epanet_core},Network,Ensure all link curve references (pump_curve_name, efficiency_curve_name, headloss_curve_name) point to existing curves.
+    issues[3]{code,message,severity,rule_id,ruleset_key,component_type,component_name,attribute,component_data,context,category,fix_suggestion,validation_layer,simulation_metadata}:
+    E_NODE_ELEVATION_MISSING,"Junction does not define elevation",ERROR,rule_junction_has_elevation,epanet_core,WNTREPANETNode,J1,elevation,{node_type: Junction, name: J1, elevation: null, base_demand: 0}, {ruleset: epanet_core, component_subtype: Junction},Parameter,Provide the junction elevation in meters.,static,{}
+    W_NODE_COORDINATES_MISSING,"Missing coordinates, node will not be displayed",WARNING,warn_node_missing_coord,epanet_core,WNTREPANETNode,J1,coordinates,{node_type: Junction, name: J1, elevation: 100, base_demand: 0}, {ruleset: epanet_core, component_subtype: Junction},Topology,Assign X,Y coordinates to the node for map display.,static,{}
+    E_UNKNOWN_CURVE_REFERENCE,"Links reference undefined curves: P1 pump_curve_name <C9>",ERROR,rule_link_curves_exist,epanet_core,network,,pump_curve_name,{}, {ruleset: epanet_core},Network,Ensure all link curve references (pump_curve_name, efficiency_curve_name, headloss_curve_name) point to existing curves.,static,{}
 
 Note that ``component_data`` and ``context`` are encoded as inline objects within
 their tabular cells.

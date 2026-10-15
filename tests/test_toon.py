@@ -97,6 +97,29 @@ class TestTOONEncoder:
         assert "root:" in result
         assert "a: 1" in result
 
+    def test_encode_numeric_strings_are_quoted(self):
+        """A string reading as another type stays a string after decoding."""
+        encoder = TOONEncoder()
+        assert encoder.encode("1") == '"1"'
+        assert encoder.encode("3.14") == '"3.14"'
+        assert encoder.encode("true") == '"true"'
+        assert encoder.encode("null") == '"null"'
+        # Genuine scalars are still bare, and plain strings stay unquoted.
+        assert encoder.encode(1) == "1"
+        assert encoder.encode(True) == "true"
+        assert encoder.encode("hello") == "hello"
+
+    def test_encode_nested_arrays_keep_their_content(self):
+        """Nested arrays recurse instead of collapsing to a placeholder."""
+        encoder = TOONEncoder()
+        result = encoder.encode({"points": [[0, 1], [2, 3]]})
+        assert "[...]" not in result
+        assert "0,1" in result and "2,3" in result
+        # The tabular-cell path inlines recursively as well.
+        assert encoder._encode_nested_array_inline([[0, 1], [2, 3]]) == (
+            "[[0,1],[2,3]]"
+        )
+
 
 class TestEncodeValidationReport:
     """Tests for encode_validation_report function."""
@@ -227,6 +250,116 @@ class TestValidationReportAsToon:
         assert "E_TANK_DIAMETER_MISSING" in result
         assert "T1" in result
         # component_data should be encoded in the row
+
+
+class TestReportParity:
+    """ValidationReport.as_dict() and .as_toon() carry identical content."""
+
+    @staticmethod
+    def _mixed_report() -> ValidationReport:
+        """A report holding one issue of each validation layer."""
+        structural = ValidationIssue(
+            code="E_PARSE_FAILED",
+            message="Document is not valid JSON",
+            severity=Severity.ERROR,
+            rule_id="parse",
+            ruleset_key="parser",
+            component_type="network",
+            validation_layer="structural",
+            context={"exception_type": "ValueError"},
+        )
+        static = ValidationIssue(
+            code="E_NODE_ELEVATION_MISSING",
+            message="Junction J1 has no elevation",
+            severity=Severity.ERROR,
+            rule_id="rule_junction_has_elevation",
+            ruleset_key="epanet_core",
+            component_type="WNTREPANETNode",
+            component_name="J1",
+            attribute="elevation",
+            component_data={"name": "J1", "node_type": "Junction"},
+            context={"ruleset": "epanet_core"},
+            category="Parameter",
+            fix_suggestion="Set the elevation on junction J1.",
+            validation_layer="static",
+        )
+        simulation = ValidationIssue(
+            code="E_MINIMUM_PRESSURE",
+            message="Minimum pressure 12.0 psi below required 20.0 psi",
+            severity=Severity.ERROR,
+            rule_id="rule_minimum_pressure",
+            ruleset_key="hydraulic",
+            component_type="simulation",
+            attribute="pressure",
+            category="Hydraulic",
+            fix_suggestion="Increase pipe diameters or add pumps.",
+            validation_layer="simulation",
+            simulation_metadata={"required_outputs": ["node.pressure"]},
+        )
+        return ValidationReport([structural, static, simulation])
+
+    def test_every_issue_field_name_appears_in_toon(self):
+        """Each as_dict field name is present in the TOON encoding."""
+        report = self._mixed_report()
+        toon = report.as_toon()
+        for issue in report.as_dict()["issues"]:
+            for field in issue:
+                assert field in toon, f"field {field!r} missing from TOON"
+
+    def test_counts_match(self):
+        """The per-severity counts are identical in both encodings."""
+        report = self._mixed_report()
+        toon = report.as_toon()
+        for severity, count in report.as_dict()["counts"].items():
+            assert f"{severity}: {count}" in toon
+        assert ("is_valid: false" in toon) == (not report.is_valid)
+
+    def test_severities_and_layers_are_preserved(self):
+        """Severity names and validation layers survive the TOON round trip."""
+        report = self._mixed_report()
+        toon = report.as_toon()
+        payload = report.as_dict()
+        assert [issue["severity"] for issue in payload["issues"]] == [
+            "ERROR",
+            "ERROR",
+            "ERROR",
+        ]
+        assert [issue["validation_layer"] for issue in payload["issues"]] == [
+            "structural",
+            "static",
+            "simulation",
+        ]
+        for issue in payload["issues"]:
+            assert issue["severity"] in toon
+            assert issue["validation_layer"] in toon
+
+    def test_simulation_metadata_category_and_fix_are_preserved(self):
+        """The simulation-only and agent-facing fields are not dropped."""
+        report = self._mixed_report()
+        toon = report.as_toon()
+        assert "simulation_metadata" in toon
+        assert "Hydraulic" in toon
+        assert "add pumps" in toon
+        assert "node.pressure" in toon
+
+    def test_numeric_string_fields_keep_their_type(self):
+        """A component named "1" is quoted, not mistaken for a number."""
+        issue = ValidationIssue(
+            code="E_CURVE_TYPE_UNSUPPORTED",
+            message="Curve 1 has an unsupported type",
+            severity=Severity.ERROR,
+            rule_id="rule_curve_type_supported",
+            ruleset_key="epanet_core",
+            component_type="WNTREPANETCurve",
+            component_name="1",
+            attribute="curve_type",
+            component_data={"name": "1", "points": [[0, 1], [2, 3]]},
+            validation_layer="static",
+        )
+        toon = ValidationReport([issue]).as_toon()
+        assert '"1"' in toon
+        assert "[[0,1],[2,3]]" in toon
+        assert "[...]" not in toon
 
 
 class TestTOONCLI:

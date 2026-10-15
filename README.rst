@@ -71,8 +71,8 @@ apart even when they are reported together.
      - After a hydraulic simulation
      - Post-simulation output: pressures, flows, velocities, headloss and the
        result tables. Rules use ``@simulation_rule``, and
-       ``custom_rules.pandera_schemas`` checks result tables against Pandera
-       schemas.
+       ``core_rules.core_dynamic.hydraulic.schemas`` checks result tables
+       against Pandera schemas (optional ``epanetparser[schemas]`` extra).
 
 Layer 1: structural
 ~~~~~~~~~~~~~~~~~~~
@@ -183,7 +183,9 @@ Requires **Python 3.10 or later**. EPANETParser can be installed with either
 The core parsing and validation functionality has no external dependencies beyond
 the standard library and ``rich``, ``pyyaml``, ``platformdirs``. WNTR (and its
 EPANET binary dependency) is only required for hydraulic simulation and is
-installed via the ``simulation`` extra.
+installed via the ``simulation`` extra. Pandera is only required for the
+simulation result-table schema checks and is installed via the ``schemas``
+extra (``pip install .[schemas]``); without it the schema checks are skipped.
 
 Quick start
 -----------
@@ -429,18 +431,18 @@ Inspecting the rulesets
 
     ❯ epanetparser info --list-rulesets
     Available rule sets:
-      epanet_core (core) - EPANET core rules v1.0.0
-          module: epanetparser.core_rules.epanet_core
+      epanet_core (core, static) - EPANET core rules v1.0.0
+          module: epanetparser.core_rules.core_static.epanet_core
           rules: 119 component, 33 network
           Simulator-agnostic checks that a model is a well-formed EPANET model:
     required component fields, valid component types, well-formed curves, unique
     component names, and resolvable references between components.
-      hydraulic (custom) - Hydraulic Simulation Validation v1.0.0
-          module: epanetparser.custom_rules.hydraulic
+      hydraulic (core, dynamic) - Hydraulic Simulation Validation v1.0.0
+          module: epanetparser.core_rules.core_dynamic.hydraulic
           rules: 0 component, 0 network
           Validation rules for hydraulic simulation results including pressure,
     velocity, headloss, flow continuity, and energy balance checks.
-      milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
+      milp (custom, static) - Mixed Integer Linear Programming ruleset v0.2.0
           module: epanetparser.custom_rules.milp
           rules: 17 component, 0 network
           Constraints imposed by an example MILP optimal pump scheduling tool: a 24

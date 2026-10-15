@@ -109,7 +109,7 @@ from rich_argparse import RichHelpFormatter
 from rich import print as rprint
 
 from epanetparser.core import __version__, console
-from epanetparser.core.display import results_as_json, write_results
+from epanetparser.core.display import write_results
 from epanetparser.core.epanettypes.network import WNTREPANETNetwork
 from epanetparser.core.io import InpParseError
 from epanetparser.core.lib.converter import WNTRINPJSONConverter
@@ -456,23 +456,17 @@ def handle_validate(args: argparse.Namespace) -> None:
     if network is None:
         # Nothing was validated, so the command must not claim the model is
         # fine. Exiting 1 rather than 2: 2 would mean the model was parsed and
-        # found invalid, and this is not that.
+        # found invalid, and this is not that. Both machine-readable formats
+        # describe the same report, so JSON and TOON agree on the failure.
+        report = ValidationReport(
+            issue
+            for findings in _structural_issues(errors).values()
+            for issue in findings
+        )
         if use_toon:
-            report = ValidationReport(
-                issue
-                for findings in _structural_issues(errors).values()
-                for issue in findings
-            )
             _print_json(report.as_toon())
         elif use_json:
-            _print_json(
-                results_as_json(
-                    filename,
-                    _structural_issues(errors),
-                    warnings,
-                    include_digest=include_digest,
-                )
-            )
+            _print_json(json.dumps(report.as_dict(), indent=2))
         else:
             write_results(filename, errors or {}, warnings, use_emoji=useemoji)
         sys.exit(1)

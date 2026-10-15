@@ -1,9 +1,10 @@
 --- # Default configuration for epanetparser
 
-# Packages searched for validation rule sets. Both core and custom rule sets are
+# Packages searched for validation rule sets. Core and custom rule sets are
 # found by the same pass over these paths; a module is a core rule set when it
-# sets `__is_core__ = True`, and custom otherwise. Exactly one core rule set may
-# be selected for a validation run; any number of custom ones may be added.
+# sets `__is_core__ = True`, and custom otherwise. Exactly one core rule set of
+# the static layer may be selected for a validation run; any number of custom
+# ones and dynamic core rule sets may be added.
 rule_set_discovery:
   # The configuration merge substitutes lists rather than extending them, so
   # `packages` REPLACES the defaults below rather than appending to them:
@@ -12,7 +13,8 @@ rule_set_discovery:
   # adding your own package. The built-in packages are always searched, and
   # searched first, so the core rule set is never lost to a shorter `packages`.
   packages:
-    - epanetparser.core_rules
+    - epanetparser.core_rules.core_static
+    - epanetparser.core_rules.core_dynamic
     - epanetparser.custom_rules
   extra_packages: []
 

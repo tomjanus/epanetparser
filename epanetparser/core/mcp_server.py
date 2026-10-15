@@ -109,6 +109,9 @@ async def _validate_network_impl(
     """Validate an EPANET network model."""
     network, error = _load_network(file_path, json_content)
     if error:
+        # The failure happens before any rule runs, so it belongs to the
+        # static layer by construction. Every field of the issue shape is
+        # present so this document matches the ones the rule engine emits.
         return [TextContent(type="text", text=json.dumps({
             "is_valid": False,
             "counts": {"ERROR": 1, "WARNING": 0, "INFO": 0},
@@ -123,6 +126,10 @@ async def _validate_network_impl(
                 "attribute": None,
                 "component_data": {},
                 "context": {},
+                "category": "",
+                "fix_suggestion": "",
+                "validation_layer": "static",
+                "simulation_metadata": {},
             }]
         }))]
 
@@ -171,9 +178,10 @@ async def _validate_static_impl(
         output_format=output_format,
     )
     # Every issue from this tool belongs to the static layer. The delegation
-    # above already tags rule findings ``static`` (the default), but the
-    # load-failure branch constructs its issue by hand; normalise it too so
-    # callers can always rely on the layer being present.
+    # above already tags rule findings ``static`` (the default), and the
+    # load-failure branch constructs its issue with the tag, so callers can
+    # always rely on the layer being present. TOON output needs no pass of
+    # its own: it encodes the same issue dicts, so the tag travels with it.
     text = result[0].text
     try:
         payload = json.loads(text)
@@ -228,7 +236,10 @@ async def _validate_simulation_impl(
                 "attribute": None,
                 "component_data": {},
                 "context": {},
+                "category": "",
+                "fix_suggestion": "",
                 "validation_layer": "static",
+                "simulation_metadata": {},
             }]
         }))]
     assert network is not None, "loading reported no error yet returned no network"
@@ -355,9 +366,11 @@ async def _list_rulesets_impl() -> List[TextContent]:
             "name": rs.name,
             "version": rs.version,
             "type": "core",
+            "layer": rs.layer,
             "description": rs.description,
             "component_rules": len(rs.component_rules),
             "network_rules": len(rs.network_rules),
+            "simulation_rules": len(rs.simulation_rules),
         })
 
     for key in registry.custom_keys():
@@ -367,9 +380,11 @@ async def _list_rulesets_impl() -> List[TextContent]:
             "name": rs.name,
             "version": rs.version,
             "type": "custom",
+            "layer": rs.layer,
             "description": rs.description,
             "component_rules": len(rs.component_rules),
             "network_rules": len(rs.network_rules),
+            "simulation_rules": len(rs.simulation_rules),
         })
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
@@ -400,6 +415,7 @@ async def _get_ruleset_details_impl(
                 "severity": spec.severity.name,
                 "attribute": spec.attribute,
                 "component_type": spec.component_type,
+                "layer": spec.layer,
             })
 
     network_rules = []
@@ -410,6 +426,19 @@ async def _get_ruleset_details_impl(
             "description": spec.description,
             "severity": spec.severity.name,
             "attribute": spec.attribute,
+            "layer": spec.layer,
+        })
+
+    simulation_rules = []
+    for sim_spec in rs.simulation_rules:
+        simulation_rules.append({
+            "rule_id": sim_spec.rule_id,
+            "code": sim_spec.code,
+            "description": sim_spec.description,
+            "severity": sim_spec.severity.name,
+            "attribute": sim_spec.attribute,
+            "required_outputs": list(sim_spec.required_outputs),
+            "layer": sim_spec.layer,
         })
 
     result = {
@@ -417,9 +446,11 @@ async def _get_ruleset_details_impl(
         "name": rs.name,
         "version": rs.version,
         "type": "core" if rs.key in registry.core_keys() else "custom",
+        "layer": rs.layer,
         "description": rs.description,
         "component_rules": component_rules,
         "network_rules": network_rules,
+        "simulation_rules": simulation_rules,
     }
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]

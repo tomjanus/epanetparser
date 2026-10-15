@@ -43,8 +43,12 @@ __description__ : str
     Detailed description of the ruleset's purpose and constraints.
 __is_core__ : bool
     Absent, so this ruleset is classified as custom rather than core.
+__layer__ : str
+    The validation layer this ruleset primarily belongs to: 'static'. The
+    ruleset is a mixed module: most of its rules are static, and it holds
+    one simulation rule as well.
 """
-from epanetparser.core.validation import match, Severity, rule
+from epanetparser.core.validation import match, Severity, rule, simulation_rule
 
 #: Schedule horizon of the formulation, in hours.
 TIME_HORIZON = 24
@@ -93,6 +97,10 @@ __description__ = (
     "valves, check valves, tank volume curves, tank overflow, emitters or "
     "controls."
 )
+
+#: The validation layer this ruleset primarily belongs to. This module is
+#: mixed: its rules are static, and it contributes one simulation rule.
+__layer__ = "static"
 
 
 @rule(PATTERN, code="E_MILP_PATTERN_LENGTH", attribute="multipliers")
@@ -362,4 +370,29 @@ def warn_inpfile_units(options) -> None:
     assert units == SIMULATED_FLOW_UNITS, (
         f"Units not in {SIMULATED_FLOW_UNITS}. Units in INP file will be "
         f"different than simulated: {units}"
+    )
+
+
+@simulation_rule(
+    code="E_MILP_SIMULATION_TIMESTEPS",
+    attribute="pressure",
+    required_outputs=["node.pressure"],
+)
+def rule_simulation_timestep_count(results) -> None:
+    """The simulation must cover the full schedule horizon in timesteps.
+
+    Notes
+    -----
+    The formulation reads one decision variable per pattern multiplier, so a
+    simulation that stops short of the 24 hour horizon leaves its 12 decision
+    periods without data. This check is computable from the results alone: the
+    pressure table holds one row per simulated timestep.
+
+    classification : Simulation
+    fix : Set the simulation duration to at least 86400 seconds (24 hours).
+    """
+    timesteps = results.node["pressure"].shape[0]
+    assert timesteps >= TIME_HORIZON, (
+        f"Simulation produced {timesteps} timesteps, expected at least "
+        f"{TIME_HORIZON} for the {TIME_HORIZON} hour schedule horizon"
     )

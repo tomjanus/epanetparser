@@ -10,7 +10,7 @@ read the settings they care about from those blocks, which keeps the class
 independent of any particular EPANET version's option set.
 
 Validation rules for options live in
-:mod:`epanetparser.core_rules.epanet_core.options`; constraints imposed by a
+:mod:`epanetparser.core_rules.core_static.epanet_core.options`; constraints imposed by a
 particular solver, such as a fixed simulation horizon, belong in a custom
 ruleset.
 """

@@ -30,8 +30,10 @@ platformdirs = "^4.9.2"
 pyyaml = "^6.0"
 # Imported directly by epanetparser.core.download.
 requests = "^2.32"
-# Required for simulation validation layer (Pandera schemas)
-pandera = "^0.34.1"
+# Optional: Pandera schemas for the simulation validation layer. Install
+# with `pip install epanetparser[schemas]`; schema checks are skipped when
+# pandera is absent.
+pandera = {version = "^0.34.1", optional = true}
 # Required by the vendored parser in epanetparser.core.io, which imports
 # them at import time (network.model, network.elements, network.controls,
 # epanet.io). They are core dependencies of parsing, not of simulation.
@@ -48,6 +50,7 @@ mcp = {version = "^1.0", optional = true}
 [tool.poetry.extras]
 agentic = ["mcp"]
 simulation = ["wntr"]
+schemas = ["pandera"]
 
 [tool.poetry.scripts]
 epanetparser = "epanetparser.core.parse:run"
@@ -105,10 +108,12 @@ epanetparser = [
 # first. The lists below are kept for reference and are expected to go stale;
 # see docs/TODO_MODEL_LAYER_DUPLICATION.md.
 rules_dirs = [
-    "epanetparser.core_rules",
+    "epanetparser.core_rules.core_static",
+    "epanetparser.core_rules.core_dynamic",
     "epanetparser.custom_rules"
 ]
 
 rulesets_dirs = [
-    "epanetparser.core_rules.epanet_core"
+    "epanetparser.core_rules.core_static.epanet_core",
+    "epanetparser.core_rules.core_dynamic.hydraulic"
 ]

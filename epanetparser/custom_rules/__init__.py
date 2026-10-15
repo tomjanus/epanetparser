@@ -1,15 +1,20 @@
 """Custom rulesets for EPANET models.
 
 A custom ruleset expresses the constraints of one application on top of the
-core ruleset: what a particular solver can represent, what a particular study
-assumes about a network. It is a plain module of ``assert``-based rules, and
-it does not subclass, patch or otherwise depend on the component classes.
+core rule sets: what a particular solver can represent, what a particular
+study assumes about a network. It is a plain module of ``assert``-based
+rules, and it does not subclass, patch or otherwise depend on the component
+classes.
 
-Discovery is the same mechanism used for the core ruleset: a module of this
+Discovery is the same mechanism used for the core rule sets: a module of this
 package that declares ``__key__``, ``__ruleset_name__`` and ``__version__`` is
 found automatically. Leaving ``__is_core__`` unset is what makes it custom.
 
-Select custom rulesets alongside the core ruleset:
+Custom rule sets may mix layers: a module can hold both static rules and
+simulation rules, and it can declare the layer it primarily belongs to with
+``__layer__`` (``"static"`` or ``"dynamic"``, default ``"static"``).
+
+Select custom rule sets alongside the core rule sets:
 
 .. code-block:: python
 

@@ -46,7 +46,7 @@ SimulationRuleSpec
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import ModuleType
+from types import FunctionType, ModuleType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Sequence, get_args, get_origin
 
 from epanetparser.core.validation.decorators import (
@@ -203,6 +203,11 @@ class RuleSpec:
         "Network", "Option"). Extracted from docstring ``classification :`` field.
     fix_suggestion : str
         Imperative fix suggestion for AI agents. Extracted from docstring ``fix :`` field.
+    layer : str
+        Validation layer this rule belongs to: ``"static"`` (the default) for
+        rules that run against a parsed model, ``"simulation"`` for rules
+        that run against simulation results. Mirrors the ``validation_layer``
+        recorded on issues.
 
     Notes
     -----
@@ -222,6 +227,7 @@ class RuleSpec:
     category: str = ""
     fix_suggestion: str = ""
     context: Dict[str, Any] = field(default_factory=dict)
+    layer: str = "static"
 
     def __post_init__(self) -> None:
         """Fill in the defaults that depend on the wrapped function."""
@@ -506,6 +512,9 @@ class SimulationRuleSpec:
     required_outputs : Tuple[str, ...]
         Names of the simulation output fields this rule requires. The engine
         will skip the rule if the simulation did not produce these outputs.
+    layer : str
+        Validation layer this rule belongs to. Simulation rules run against
+        simulation results, so their layer is ``"simulation"``.
 
     Notes
     -----
@@ -523,6 +532,7 @@ class SimulationRuleSpec:
     fix_suggestion: str = ""
     required_outputs: Tuple[str, ...] = ()
     context: Dict[str, Any] = field(default_factory=dict)
+    layer: str = "simulation"
 
     def __post_init__(self) -> None:
         """Fill in the defaults that depend on the wrapped function."""
@@ -781,7 +791,7 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec], L
     Examples
     --------
     >>> from types import ModuleType
-    >>> import epanetparser.core_rules.epanet_core.nodes as nodes
+    >>> import epanetparser.core_rules.core_static.epanet_core.nodes as nodes
     >>> component_rules, network_rules, simulation_rules = collect_rules(nodes)
     >>> len(network_rules)
     0
@@ -790,7 +800,9 @@ def collect_rules(module: ModuleType) -> Tuple[List[RuleSpec], List[RuleSpec], L
     network_rules: List[RuleSpec] = []
     simulation_rules: List[SimulationRuleSpec] = []
     for name, value in sorted(vars(module).items()):
-        if not callable(value):
+        if not callable(value) or not isinstance(value, FunctionType):
+            # Only functions can be rules; callable objects such as a pandera
+            # DataFrameSchema in the same module are not rule candidates.
             continue
         
         # Check for explicit decorators first (backward compatibility)

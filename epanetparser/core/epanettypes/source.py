@@ -4,9 +4,9 @@ A source injects a constituent, such as chlorine, into a node. Sources are
 uncommon: most models have none.
 
 Validation rules for sources live in
-:mod:`epanetparser.core_rules.epanet_core.sources`. The reference a source
+:mod:`epanetparser.core_rules.core_static.epanet_core.sources`. The reference a source
 makes to its node and to its pattern is resolved by
-:mod:`epanetparser.core_rules.epanet_core.network_rules`, because a component
+:mod:`epanetparser.core_rules.core_static.epanet_core.network_rules`, because a component
 rule cannot see the rest of the model.
 """
 from typing import Any, Dict, Optional

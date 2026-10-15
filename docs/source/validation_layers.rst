@@ -36,8 +36,8 @@ The three layers
        quality. Rules are declared with ``@simulation_rule`` and are only
        executed when simulation validation is requested. They are skipped
        when the outputs they require were not produced by the simulator.
-       ``custom_rules.pandera_schemas`` provides Pandera-based checks over
-       result tables.
+       ``core_rules.core_dynamic.hydraulic.schemas`` provides Pandera-based
+       checks over result tables (optional ``epanetparser[schemas]`` extra).
 
 Each layer is described in turn below. :doc:`simulation_validation` covers
 the third layer in more depth.
@@ -140,10 +140,12 @@ so a rule set stays meaningful across simulators with different output.
 and are tagged ``validation_layer="simulation"``. Their
 ``simulation_metadata`` records the rule's ``required_outputs``, and their
 ``context`` carries the rule's static context. The
-``custom_rules.pandera_schemas`` helpers (``validate_node_results``,
-``validate_link_results``) additionally check whole result tables against
-Pandera schemas, failing when a field is missing, has the wrong dtype, or
-contains non-finite values.
+``core_rules.core_dynamic.hydraulic.schemas`` helpers
+(``validate_node_results``, ``validate_link_results``) additionally check
+whole result tables against Pandera schemas, failing when a present field
+has the wrong dtype or violates its check. The schemas are optional
+(``epanetparser[schemas]``); without Pandera the schema checks are skipped
+and a failure is reported as ``E_SIMULATION_SCHEMA`` only when they run.
 
 Unified report
 --------------

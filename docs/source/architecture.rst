@@ -60,9 +60,12 @@ Module                  Responsibility
 ``core.lib``            INP ↔ JSON conversion.
 ``core.validation``     Rule metadata, discovery, registry, engine, and the
                         ``ValidationReport``/``ValidationIssue`` types.
-``core_rules``          Simulator-agnostic core rule sets (e.g. ``epanet_core``).
-``custom_rules``        Application rule sets, including the simulation
-                        ruleset (``hydraulic``) and its Pandera schemas.
+``core_rules``          Core rule sets by layer: ``core_static`` holds the
+                        simulator-agnostic ``epanet_core`` rule set;
+                        ``core_dynamic`` holds the ``hydraulic`` simulation
+                        rule set with its Pandera schemas.
+``custom_rules``        Application rule sets (e.g. ``milp``), which may mix
+                        static and simulation rules in one module.
 ``core.parse``          The ``epanetparser`` command-line interface.
 ======================  =====================================================
 

@@ -6,7 +6,7 @@ EPANET section; it is metadata about the file, and EPANET itself neither
 requires nor reads it.
 
 Validation rules for network metadata live in
-:mod:`epanetparser.core_rules.epanet_core.network_info`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.network_info`.
 """
 from typing import Any, Dict, List
 

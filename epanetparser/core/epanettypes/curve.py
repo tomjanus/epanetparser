@@ -4,7 +4,7 @@ A curve is a named list of ``(x, y)`` points describing the behaviour of a
 pump, a head-loss curve or a tank volume relation.
 
 Validation rules for curves live in
-:mod:`epanetparser.core_rules.epanet_core.curves`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.curves`.
 """
 from typing import Any, Dict, List, Tuple
 
@@ -28,7 +28,7 @@ class WNTREPANETCurve(WNTREPANETType):
     ``PUMP``, so a curve type is a coarse hint, not a guarantee. Reference
     rules therefore check that a referenced curve *exists* rather than that it
     has a particular type; see
-    :mod:`epanetparser.core_rules.epanet_core.network_rules`.
+    :mod:`epanetparser.core_rules.core_static.epanet_core.network_rules`.
 
     Examples
     --------

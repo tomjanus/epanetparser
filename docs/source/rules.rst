@@ -19,7 +19,10 @@ Warning
 Rule set
     A module collecting rules and warnings, which may be applied to a model as
     a group. Custom rule sets let different collections of rules be applied to
-    the same model depending on the context the caller operates in.
+    the same model depending on the context the caller operates in. Every rule
+    set declares the validation layer it belongs to (``static`` or
+    ``dynamic``): static rule sets run against a parsed model, dynamic ones
+    against simulation results.
 
 Rule Metadata
     Each rule carries structured metadata for categorization and AI-assisted
@@ -264,8 +267,18 @@ __description__
 
 __is_core__
     ``True`` for a core rule set, ``False`` or absent for a custom one. Exactly
-    one core rule set may be selected per validation run; any number of custom
-    ones may be added alongside it.
+    one core rule set of the static layer may be selected per validation run;
+    any number of custom ones, and any number of dynamic core rule sets, may be
+    added alongside it. A dynamic core rule set (``hydraulic``) is selected as
+    a custom rule set; it can never occupy the core slot.
+
+__layer__
+    The validation layer the rule set primarily belongs to: ``"static"`` for
+    rule sets that run against a parsed model, ``"dynamic"`` for rule sets that
+    run against simulation results. Defaults to ``"static"`` when absent.
+    Individual rules carry their own layer too: static rule specs report
+    ``"static"``, simulation rule specs ``"simulation"``, mirroring the
+    ``validation_layer`` recorded on issues.
 
 Rules can be declared in two ways:
 
@@ -287,7 +300,8 @@ the ``rule_set_discovery`` section of the configuration file:
 
     rule_set_discovery:
       packages:
-        - epanetparser.core_rules
+        - epanetparser.core_rules.core_static
+        - epanetparser.core_rules.core_dynamic
         - epanetparser.custom_rules
       extra_packages: []
 
@@ -339,11 +353,15 @@ The rule set will then appear in the output of ``epanetparser info
 
     $ epanetparser info --list-rulesets
     Available rule sets:
-      epanet_core (core) - EPANET core rules v1.0.0
-          module: epanetparser.core_rules.epanet_core
+      epanet_core (core, static) - EPANET core rules v1.0.0
+          module: epanetparser.core_rules.core_static.epanet_core
           rules: 44 component, 12 network
           Simulator-agnostic checks that a model is a well-formed EPANET model.
-      milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
+      hydraulic (core, dynamic) - Hydraulic Simulation Validation v1.0.0
+          module: epanetparser.core_rules.core_dynamic.hydraulic
+          rules: 0 component, 0 network
+          Validation rules for hydraulic simulation results.
+      milp (custom, static) - Mixed Integer Linear Programming ruleset v0.2.0
           module: epanetparser.custom_rules.milp
           rules: 17 component, 0 network
           Constraints imposed by an example MILP optimal pump scheduling tool.
@@ -354,14 +372,24 @@ The rule set will then appear in the output of ``epanetparser info
 
     $ epanetparser validate -f model.json --ruleset milp --ruleset my_project
 
-The core rule set
------------------
+The core rule sets
+-------------------
 
-``epanet_core`` checks that a model is a well-formed EPANET model: required
-component fields, valid component types, well-formed curves, unique component
-names, and references between components that resolve. It is simulator-agnostic,
-like a compiler's static checks, and it makes no claim about whether a given
-tool can simulate the result.
+The static core rule set, ``epanet_core``
+(``epanetparser.core_rules.core_static.epanet_core``), checks that a model is
+a well-formed EPANET model: required component fields, valid component types,
+well-formed curves, unique component names, and references between components
+that resolve. It is simulator-agnostic, like a compiler's static checks, and
+it makes no claim about whether a given tool can simulate the result.
+
+The dynamic core rule set, ``hydraulic``
+(``epanetparser.core_rules.core_dynamic.hydraulic``), checks simulation
+results after a hydraulic run: pressure, velocity, headloss, flow continuity
+and energy balance. Its rules live in ``rules.py`` next to the Pandera result
+schemas in ``schemas.py``; Pandera itself is optional
+(``pip install epanetparser[schemas]``), and the schema checks are skipped
+when it is absent. Neither module imports WNTR at load time, so core discovery
+never requires the simulation extra.
 
 Constraints that belong to one application, such as the linearisation limits of
 an MILP pump scheduling formulation, belong in a custom rule set. That
@@ -369,8 +397,15 @@ distinction is what the architecture exists to express: a model can be a valid
 EPANET model and still be unusable by a particular tool, and both statements can
 be true of the same object at the same time.
 
-The core rule set currently provides **44 component rules** and **12 network
-rules** covering all statically-checkable EPANET error codes (200-263) plus
-engineering judgment warnings. See :doc:`validation_categories` for a breakdown
-by category.
+A rule set module may mix layers: ``milp`` holds static component rules and
+one simulation rule (``rule_simulation_timestep_count``), and discovery
+collects both into the same rule set. Selection keeps the layers apart: the
+core slot must resolve to the static core rule set, while the dynamic core
+rule set is selected as a custom rule set (``--simulation-ruleset hydraulic``
+on the CLI, ``custom=["hydraulic"]`` in the library).
+
+The static core rule set currently provides **44 component rules** and **12
+network rules** covering all statically-checkable EPANET error codes (200-263)
+plus engineering judgment warnings. See :doc:`validation_categories` for a
+breakdown by category.
 

@@ -3,7 +3,7 @@
 A link is a pipe, a pump or a valve. Whether the link's endpoints exist, and
 whether the curves a link names exist, is a question about the whole model and
 is therefore checked by the network rules in
-:mod:`epanetparser.core_rules.epanet_core.network`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.network`.
 """
 from epanetparser.core.validation import match, defined as _defined, rule
 

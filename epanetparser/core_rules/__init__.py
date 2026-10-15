@@ -1,13 +1,24 @@
 """Core rulesets for EPANET models.
 
 A ruleset is a collection of validation rules, discovered by the same
-mechanism whether it is core or custom. This package holds the core rulesets;
-at present there is exactly one, :mod:`epanetparser.core_rules.epanet_core`,
-and exactly one core ruleset may be selected for a validation run.
+mechanism whether it is core or custom. This package holds the core rule
+sets, organised by validation layer:
 
-Custom rulesets live in :mod:`epanetparser.custom_rules` and are discovered by
+* :mod:`epanetparser.core_rules.core_static` holds the core static rule set
+  (:mod:`epanetparser.core_rules.core_static.epanet_core`), which encodes
+  what EPANET itself requires of a well-formed model;
+* :mod:`epanetparser.core_rules.core_dynamic` holds the core dynamic rule
+  sets, which run after a hydraulic simulation against its results.
+
+Exactly one core static rule set may be selected for a validation run; any
+number of custom rule sets (from :mod:`epanetparser.custom_rules`) and
+dynamic core rule sets may be added alongside it.
+
+Custom rule sets live in :mod:`epanetparser.custom_rules` and are discovered by
 the same pass. The only difference between the two is module metadata: a core
-ruleset sets ``__is_core__ = True``, a custom ruleset leaves it unset.
+rule set sets ``__is_core__ = True``, a custom rule set leaves it unset. The
+layer a rule set belongs to is declared with ``__layer__`` (``"static"`` or
+``"dynamic"``).
 
 Notes
 -----

@@ -51,9 +51,10 @@ class TestDiscovery:
     """Finding rule sets."""
 
     def test_default_packages_cover_core_and_custom(self):
-        """Both rule set packages are searched, and they are the only defaults."""
+        """All three leaf packages are searched, and they are the only defaults."""
         packages = default_packages()
-        assert "epanetparser.core_rules" in packages
+        assert "epanetparser.core_rules.core_static" in packages
+        assert "epanetparser.core_rules.core_dynamic" in packages
         assert "epanetparser.custom_rules" in packages
 
     def test_discovers_every_rule_set_in_a_package(self, registry):
@@ -64,8 +65,10 @@ class TestDiscovery:
         """One pass finds both kinds; the metadata is what distinguishes them."""
         modules = discover_ruleset_modules()
         assert "epanet_core" in modules
+        assert "hydraulic" in modules
         assert "milp" in modules
         assert modules["epanet_core"].__is_core__ is True
+        assert modules["hydraulic"].__is_core__ is True
         assert not hasattr(modules["milp"], "__is_core__")
 
     def test_core_and_custom_are_classified_by_metadata(self, registry):
@@ -295,6 +298,112 @@ class TestValidatorConstruction:
         context = ValidationContext(core=MOCK_CORE, custom=["advanced"], registry=registry)
         validator = Validator.from_context(context)
         assert validator.ruleset_keys == (MOCK_CORE, "advanced")
+
+
+class TestBundledRuleSets:
+    """The bundled rule sets: keys, classification and layers."""
+
+    def test_default_keys_are_unchanged(self):
+        """The migration kept the stable keys: exactly these three."""
+        assert RuleSetRegistry().keys() == ["epanet_core", "hydraulic", "milp"]
+
+    def test_core_and_custom_classification(self):
+        """epanet_core and hydraulic are core; milp is custom."""
+        registry = RuleSetRegistry()
+        assert registry.core_keys() == ["epanet_core", "hydraulic"]
+        assert registry.custom_keys() == ["milp"]
+        assert registry.get("epanet_core").is_core is True
+        assert registry.get("hydraulic").is_core is True
+        assert registry.get("milp").is_core is False
+
+    def test_layers(self):
+        """epanet_core is static, hydraulic dynamic, milp static."""
+        registry = RuleSetRegistry()
+        assert registry.get("epanet_core").layer == "static"
+        assert registry.get("hydraulic").layer == "dynamic"
+        assert registry.get("milp").layer == "static"
+
+    def test_a_dynamic_core_ruleset_can_be_selected_as_custom(self):
+        """hydraulic is core of the dynamic layer, so custom selection works.
+
+        This keeps ``custom=["hydraulic"]`` working from the CLI and MCP.
+        """
+        selected = RuleSetRegistry().resolve(
+            ValidationContext(custom=["hydraulic"])
+        )
+        assert [ruleset.key for ruleset in selected] == [
+            "epanet_core",
+            "hydraulic",
+        ]
+
+    def test_a_static_core_ruleset_is_rejected_as_custom(self):
+        """epanet_core occupies the core slot; it cannot sit beside itself."""
+        with pytest.raises(RuleSetSelectionError) as excinfo:
+            RuleSetRegistry().resolve(
+                ValidationContext(custom=["epanet_core"])
+            )
+        assert "cannot be selected as a custom" in str(excinfo.value)
+
+    def test_a_dynamic_core_ruleset_is_rejected_as_core(self):
+        """The core slot must resolve to the static core rule set."""
+        with pytest.raises(RuleSetSelectionError) as excinfo:
+            RuleSetRegistry().resolve(ValidationContext(core="hydraulic"))
+        assert "static" in str(excinfo.value)
+
+    def test_discovery_finds_all_three_layouts(self):
+        """Plain module (milp), package (epanet_core), package-with-submodules."""
+        registry = RuleSetRegistry()
+        assert registry.get("milp").module_path == "epanetparser.custom_rules.milp"
+        assert (
+            registry.get("epanet_core").module_path
+            == "epanetparser.core_rules.core_static.epanet_core"
+        )
+        assert (
+            registry.get("hydraulic").module_path
+            == "epanetparser.core_rules.core_dynamic.hydraulic"
+        )
+
+    def test_the_mixed_module_contributes_static_and_simulation_rules(self):
+        """milp holds component and simulation rules in one module."""
+        milp_ruleset = RuleSetRegistry().get("milp")
+        assert len(milp_ruleset.component_rules) > 0
+        assert len(milp_ruleset.simulation_rules) > 0
+        simulation_ids = {
+            spec.rule_id for spec in milp_ruleset.simulation_rules
+        }
+        assert "rule_simulation_timestep_count" in simulation_ids
+
+    def test_spec_layers(self):
+        """Static specs report "static", simulation specs "simulation"."""
+        registry = RuleSetRegistry()
+        core = registry.get("epanet_core")
+        assert {spec.layer for spec in core.component_rules} == {"static"}
+        hydraulic_ruleset = registry.get("hydraulic")
+        assert {spec.layer for spec in hydraulic_ruleset.simulation_rules} == {
+            "simulation"
+        }
+
+    def test_describe_includes_layer(self):
+        """The human-readable listing names the layer of each rule set."""
+        text = RuleSetRegistry().describe()
+        assert "epanet_core (core, static)" in text
+        assert "hydraulic (core, dynamic)" in text
+        assert "milp (custom, static)" in text
+
+    def test_as_dict_includes_layer(self):
+        """The serialised summaries carry the layer, for rulesets and rules."""
+        epanet_core = RuleSetRegistry().get("epanet_core").as_dict()
+        assert epanet_core["layer"] == "static"
+        assert all(
+            entry["layer"] == "static"
+            for entry in epanet_core["component_rules"]
+        )
+        hydraulic_payload = RuleSetRegistry().get("hydraulic").as_dict()
+        assert hydraulic_payload["layer"] == "dynamic"
+        assert all(
+            entry["layer"] == "simulation"
+            for entry in hydraulic_payload["simulation_rules"]
+        )
 
 
 class TestCacheInvalidation:

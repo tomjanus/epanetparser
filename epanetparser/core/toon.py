@@ -21,6 +21,31 @@ Primitive = Union[str, int, float, bool, None]
 JSONValue = Union[Primitive, Dict[str, Any], List[Any]]
 
 
+#: Literals a decoder reads as non-strings; such strings must be quoted.
+_RESERVED_LITERALS = frozenset({"true", "false", "null"})
+
+
+def _looks_like_scalar(value: str) -> bool:
+    """Return True when a decoder would read ``value`` as a non-string.
+
+    Numeric literals (``"1"``, ``"3.14"``, ``"1e5"``) and the reserved
+    literals ``true``/``false``/``null`` decode to numbers, booleans or null,
+    so a string holding one of them must be quoted to keep its type.
+    """
+    if value in _RESERVED_LITERALS:
+        return True
+    try:
+        int(value)
+        return True
+    except ValueError:
+        pass
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
+
 class TOONEncoder:
     """Encodes Python objects (JSON data model) to TOON format."""
 
@@ -98,11 +123,21 @@ class TOONEncoder:
         return prefix + "null"
 
     def _quote_string(self, s: str) -> str:
-        """Quote a string if it contains special characters."""
+        """Quote a string when it needs quoting to survive a round trip.
+
+        Strings with structural characters are quoted, and so are strings a
+        decoder would read as another type: numeric literals (``"1"``),
+        booleans (``"true"``) and null (``"null"``). Without the quotes the
+        value comes back with the wrong type.
+        """
         if not s:
             return '""'
-        special_chars = set(' \t\n\r,:[]{}#\'\"')
-        if any(c in special_chars for c in s) or s.startswith("-"):
+        special_chars = set(' \t\n\r,:[]{}#\'"')
+        if (
+            any(c in special_chars for c in s)
+            or s.startswith("-")
+            or _looks_like_scalar(s)
+        ):
             escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             return f'"{escaped}"'
         return s
@@ -271,13 +306,16 @@ class TOONEncoder:
         return "{" + self.delimiter.join(parts) + "}"
 
     def _encode_nested_array_inline(self, arr: List[Any]) -> str:
-        """Encode nested array inline for tabular cell."""
+        """Encode nested array inline for tabular cell.
+
+        Elements recurse through :meth:`_format_tabular_cell`, so nested
+        objects and arrays keep their content instead of collapsing to a
+        placeholder. The encoding stays terse but lossless.
+        """
         if not arr:
             return "[]"
-        if self._is_primitive_array(arr):
-            items = [self._format_inline_item(item) for item in arr]
-            return "[" + self.delimiter.join(items) + "]"
-        return "[...]"  # Complex nested array - placeholder
+        items = [self._format_tabular_cell(item) for item in arr]
+        return "[" + self.delimiter.join(items) + "]"
 
     def _encode_object(
         self,

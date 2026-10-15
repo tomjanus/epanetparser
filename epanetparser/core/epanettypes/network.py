@@ -627,13 +627,24 @@ class WNTREPANETNetwork:
 
     def to_wntr(self):
         """Return a WaterNetworkModel for WNTR simulation.
-        
+
         Returns
         -------
         WaterNetworkModel
             A WNTR WaterNetworkModel that can be simulated.
+
+        Notes
+        -----
+        :meth:`as_dict` omits empty collections, but the vendored reader
+        warns for every absent collection key. The missing ones are spelled
+        out as empty here, because an absent collection *is* an empty
+        collection; the warning would otherwise fire for every model without
+        sources or controls.
         """
-        wn = from_dict(self.as_dict())
+        model = self.as_dict()
+        for collection in ("curves", "nodes", "links", "sources", "controls"):
+            model.setdefault(collection, [])
+        wn = from_dict(model)
         # Set _inpfile so the model can be written to INP for simulation
         wn._inpfile = InpFile()
         return wn

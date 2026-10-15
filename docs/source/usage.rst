@@ -272,13 +272,17 @@ To see what is available:
 
     $ epanetparser info --list-rulesets
     Available rule sets:
-      epanet_core (core) - EPANET core rules v1.0.0
-          module: epanetparser.core_rules.epanet_core
+      epanet_core (core, static) - EPANET core rules v1.0.0
+          module: epanetparser.core_rules.core_static.epanet_core
           rules: 44 component, 12 network
           Simulator-agnostic checks that a model is a well-formed EPANET model:
           required component fields, valid component types, well-formed curves,
           unique component names, and resolvable references between components.
-      milp (custom) - Mixed Integer Linear Programming ruleset v0.2.0
+      hydraulic (core, dynamic) - Hydraulic Simulation Validation v1.0.0
+          module: epanetparser.core_rules.core_dynamic.hydraulic
+          rules: 0 component, 0 network
+          Validation rules for hydraulic simulation results.
+      milp (custom, static) - Mixed Integer Linear Programming ruleset v0.2.0
           module: epanetparser.custom_rules.milp
           rules: 17 component, 0 network
           Constraints imposed by an example MILP optimal pump scheduling tool.
@@ -426,7 +430,7 @@ The ``show`` subcommand now displays each rule's category and fix suggestion:
     ╭────────────────────────────────────────────────────────────────────────╮
     │                  core rule set: epanet_core                            │
     │  EPANET core rules v1.0.0                                              │
-    │  module: epanetparser.core_rules.epanet_core.nodes                     │
+    │  module: epanetparser.core_rules.core_static.epanet_core.nodes                     │
     │                                                                        │
     │  Simulator-agnostic checks that a model is a well-formed EPANET model. │
     ╰────────────────────────────────────────────────────────────────────────╯
@@ -463,7 +467,8 @@ file, not ``pyproject.toml``, is the single source of truth for them:
 
     rule_set_discovery:
       packages:
-        - epanetparser.core_rules
+        - epanetparser.core_rules.core_static
+        - epanetparser.core_rules.core_dynamic
         - epanetparser.custom_rules
       extra_packages: []
 

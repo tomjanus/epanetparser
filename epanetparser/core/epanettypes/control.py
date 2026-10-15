@@ -7,7 +7,7 @@ because the EPANET control language is not a data structure this parser
 re-interprets.
 
 Validation rules for controls live in
-:mod:`epanetparser.core_rules.epanet_core.controls`.
+:mod:`epanetparser.core_rules.core_static.epanet_core.controls`.
 """
 from typing import Any, Dict, List
 

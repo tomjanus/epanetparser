@@ -8,7 +8,7 @@ omit =
     epanetparser/core/display.py
     epanetparser/core/plugins_cli.py
     epanetparser/core/download.py
-    epanetparser/core_rules/epanet_core/*
+    epanetparser/core_rules/core_static/epanet_core/*
 
 [report]
 fail_under = 70

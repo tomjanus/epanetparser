@@ -326,10 +326,10 @@ TOON encoding is implemented internally with zero dependencies.
 
 ## Examples
 
-See `examples/10_agentic_demo.py` for a complete demonstration:
+See `examples/05_mcp_server_outputs.py` for a complete demonstration:
 
 ```bash
-python examples/10_agentic_demo.py
+python examples/05_mcp_server_outputs.py
 ```
 
 ---

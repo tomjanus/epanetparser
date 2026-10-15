@@ -123,8 +123,11 @@ object rather than the model. Each decorated function carries a
 ``"node.pressure"``) are checked before the rule runs: a rule whose outputs
 the simulator did not produce is skipped, not failed. Failures append to the
 same ``ValidationReport`` as the static layer, tagged
-``validation_layer="simulation"``. The ``hydraulic`` custom rule set is the
-built-in example. See :doc:`simulation_validation`.
+``validation_layer="simulation"``. The ``hydraulic`` core dynamic rule set
+(``epanetparser.core_rules.core_dynamic.hydraulic``) is the built-in example;
+its result-table schemas live beside its rules in ``schemas.py`` and depend on
+the optional ``pandera`` package (``epanetparser[schemas]``). See
+:doc:`simulation_validation`.
 
 Every issue, from any layer, carries structured metadata including:
 
@@ -178,10 +181,16 @@ from the first parameter's type annotation. Network rules must use
 styles, using ``__module__`` to avoid duplicate collection of re-exported
 functions.
 
-A rule set is not limited to the model. The ``hydraulic`` set declares
-``@simulation_rule`` functions instead, collected into the same ``RuleSet`` as
-its ``simulation_rules`` and run by the simulation layer after a hydraulic
-run.
+A rule set is not limited to the model, and a rule set module is not limited
+to one layer. The ``hydraulic`` core dynamic set declares ``@simulation_rule``
+functions, collected into the same ``RuleSet`` as its ``simulation_rules``
+and run by the simulation layer after a hydraulic run. The ``milp`` custom
+set mixes layers the other way: static component rules plus one simulation
+rule in one module. Each rule set declares its primary layer with
+``__layer__`` (``"static"`` or ``"dynamic"``), each rule spec carries its own
+``layer``, and selection keeps the roles apart: the core slot must resolve to
+the static core rule set, while the dynamic core rule set is selected as a
+custom rule set.
 
 .. note::
 

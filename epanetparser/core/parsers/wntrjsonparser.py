@@ -15,7 +15,7 @@ that points at nothing, is a validation concern and is found by
 :meth:`epanetparser.core.epanettypes.network.WNTREPANETNetwork.validate`.
 
 Duplicate-name detection used to live here. It is now a network rule in
-:mod:`epanetparser.core_rules.epanet_core.network`, because a duplicate name is
+:mod:`epanetparser.core_rules.core_static.epanet_core.network`, because a duplicate name is
 a defect in the model rather than in its encoding.
 
 Component groups

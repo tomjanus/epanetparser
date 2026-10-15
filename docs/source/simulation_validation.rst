@@ -60,8 +60,9 @@ programmatically.
 Pandera schemas
 ---------------
 
-``custom_rules.pandera_schemas`` validates entire result tables with
-Pandera data-frame schemas:
+``core_rules.core_dynamic.hydraulic.schemas`` validates entire result
+tables with Pandera data-frame schemas (optional ``epanetparser[schemas]``
+extra; skipped when Pandera is absent):
 
 * ``validate_node_results`` — schema for nodal result fields
   (pressure, head, quality, ...).
